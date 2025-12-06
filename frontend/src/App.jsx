@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, React } from 'react'
 import ResumeUpload from './components/ResumeUpload'
 import InterestSelector from './components/InterestSelector'
 import TimeCommitment from './components/TimeCommitment'
@@ -6,6 +6,11 @@ import RoadmapDisplay from './components/RoadmapDisplay'
 import AIChat from './components/AIChat'
 import { generateRoadmap } from './services/api'
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { onAuthStateChanged } from "firebase/auth"
+import { auth } from "./firebase"
+import Signup from "./Signup"
+import Login from "./Login"
+
 
 function App() {
   const [step, setStep] = useState(1)
@@ -16,6 +21,18 @@ function App() {
   const [roadmap, setRoadmap] = useState(null)
   const [generatingRoadmap, setGeneratingRoadmap] = useState(false)
   const [error, setError] = useState(null)
+  const [user, setUser] = useState(null)
+  const [authChecked, setAuthChecked] = useState(false)
+  const [showSignup, setShowSignup] = useState(false)
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthChecked(true);
+    });
+
+    return () => unsub();
+  }, []);
 
   const handleResumeComplete = (data) => {
     setResumeData(data.resumeText)
@@ -43,7 +60,7 @@ function App() {
       }
 
       const response = await generateRoadmap(userData)
-      
+
       if (response.success) {
         setRoadmap(response.roadmap)
         setStep(4)
@@ -80,7 +97,21 @@ function App() {
     { number: 3, name: 'Set Preferences', icon: '⚙️' },
     { number: 4, name: 'View Roadmap', icon: '🗺️' },
   ]
+  if (!authChecked) {
+    return <div className="text-center mt-20">Loading...</div>;
+  }
 
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        {step === 0 ? (
+          <Signup onSwitch={() => setStep(-1)} />
+        ) : (
+          <Login onSwitch={() => setStep(0)} />
+        )}
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       {/* Header */}
@@ -107,11 +138,10 @@ function App() {
               <div key={stepItem.number} className="flex items-center flex-1">
                 <div className="flex flex-col items-center flex-1">
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${
-                      step >= stepItem.number
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 text-gray-500'
-                    }`}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${step >= stepItem.number
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-500'
+                      }`}
                   >
                     {step > stepItem.number ? (
                       <CheckCircle className="h-6 w-6" />
@@ -119,17 +149,15 @@ function App() {
                       <span>{stepItem.number}</span>
                     )}
                   </div>
-                  <span className={`text-xs mt-2 font-medium ${
-                    step >= stepItem.number ? 'text-gray-800' : 'text-gray-500'
-                  }`}>
+                  <span className={`text-xs mt-2 font-medium ${step >= stepItem.number ? 'text-gray-800' : 'text-gray-500'
+                    }`}>
                     {stepItem.name}
                   </span>
                 </div>
                 {index < steps.length - 1 && (
                   <div
-                    className={`h-1 flex-1 mx-2 rounded ${
-                      step > stepItem.number ? 'bg-blue-600' : 'bg-gray-200'
-                    }`}
+                    className={`h-1 flex-1 mx-2 rounded ${step > stepItem.number ? 'bg-blue-600' : 'bg-gray-200'
+                      }`}
                   />
                 )}
               </div>
