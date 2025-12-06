@@ -11,7 +11,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 120000, // 120 seconds (2 minutes) for AI calls
+  timeout: 900000, // 900 seconds (15 minutes) for AI calls, especially roadmap generation
 })
 
 // Request interceptor for logging
@@ -62,7 +62,7 @@ api.interceptors.response.use(
     // Handle timeout errors specifically
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
       return Promise.reject({
-        message: 'Request timed out. The AI is taking longer than expected. Please try again.',
+        message: 'Request timed out. Roadmap generation can take up to 15 minutes. Please try again.',
         status: 0,
       })
     }
@@ -93,7 +93,9 @@ export const apiService = {
     api.post('/recommend-domains', { profile }),
 
   generateRoadmap: (userData) =>
-    api.post('/generate-roadmap', userData),
+    api.post('/generate-roadmap', userData, {
+      timeout: 900000, // 900 seconds (15 minutes) for roadmap generation
+    }),
 
   chat: (message, context) =>
     api.post('/chat', { message, context }),

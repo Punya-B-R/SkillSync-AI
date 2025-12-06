@@ -1,16 +1,11 @@
 import { useState } from 'react'
-import { CheckCircle, Circle, ChevronDown, ChevronRight, Calendar, Clock, BookOpen, Code, Target, Download, Copy, Share2, ExternalLink, AlertCircle } from 'lucide-react'
+import { CheckCircle, Circle, ChevronDown, ChevronRight, Calendar, Clock, BookOpen, Code, Target, Download, Copy, Share2, ExternalLink, AlertCircle, Check, Dumbbell, BookOpen as BookOpenIcon } from 'lucide-react'
 
 function RoadmapDisplay({ roadmap, profile }) {
   const [expandedPhases, setExpandedPhases] = useState({})
-  const [selectedWeek, setSelectedWeek] = useState(1)
+  const [expandedWeek, setExpandedWeek] = useState(null)
   const [expandedProjects, setExpandedProjects] = useState({})
-  const [resourceFilters, setResourceFilters] = useState({
-    tool: 'all',
-    type: 'all',
-    difficulty: 'all',
-    free: 'all',
-  })
+  const [completedDays, setCompletedDays] = useState(new Set())
 
   if (!roadmap) {
     return (
@@ -30,6 +25,10 @@ function RoadmapDisplay({ roadmap, profile }) {
     }))
   }
 
+  const toggleWeek = (weekNumber) => {
+    setExpandedWeek(expandedWeek === weekNumber ? null : weekNumber)
+  }
+
   const toggleProject = (projectIndex) => {
     setExpandedProjects(prev => ({
       ...prev,
@@ -37,17 +36,18 @@ function RoadmapDisplay({ roadmap, profile }) {
     }))
   }
 
-  const filteredResources = roadmap.resources?.filter(resource => {
-    if (resourceFilters.tool !== 'all' && !resource.title.toLowerCase().includes(resourceFilters.tool.toLowerCase())) return false
-    if (resourceFilters.type !== 'all' && resource.type !== resourceFilters.type) return false
-    if (resourceFilters.difficulty !== 'all' && resource.difficulty !== resourceFilters.difficulty) return false
-    if (resourceFilters.free !== 'all') {
-      const isFree = resource.is_free === true || resource.is_free === 'true'
-      if (resourceFilters.free === 'free' && !isFree) return false
-      if (resourceFilters.free === 'paid' && isFree) return false
-    }
-    return true
-  }) || []
+  const toggleDayComplete = (weekNumber, dayNumber) => {
+    const dayKey = `${weekNumber}-${dayNumber}`
+    setCompletedDays(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(dayKey)) {
+        newSet.delete(dayKey)
+      } else {
+        newSet.add(dayKey)
+      }
+      return newSet
+    })
+  }
 
   const handleExportPDF = () => {
     window.print()
@@ -128,10 +128,10 @@ function RoadmapDisplay({ roadmap, profile }) {
           </div>
           <div className="bg-white/10 rounded-lg p-4 backdrop-blur">
             <div className="flex items-center gap-2 mb-2">
-              <BookOpen className="h-5 w-5" />
-              <p className="text-sm text-blue-100">Resources</p>
+              <Calendar className="h-5 w-5" />
+              <p className="text-sm text-blue-100">Weeks</p>
             </div>
-            <p className="text-2xl font-bold">{roadmap.resources?.length || 0}</p>
+            <p className="text-2xl font-bold">{roadmap.weekly_plans?.length || roadmap.total_duration_weeks || 0}</p>
           </div>
         </div>
       </div>
@@ -162,7 +162,7 @@ function RoadmapDisplay({ roadmap, profile }) {
                       </span>
                       <span className="flex items-center gap-1">
                         <Code className="h-4 w-4" />
-                        {phase.tools_covered?.length || 0} tools
+                        {phase.tools?.length || 0} tools
                       </span>
                     </div>
                   </div>
@@ -179,39 +179,27 @@ function RoadmapDisplay({ roadmap, profile }) {
                   <div className="mb-4">
                     <h5 className="font-semibold text-gray-700 mb-2">Learning Objectives</h5>
                     <ul className="list-disc list-inside space-y-1 text-gray-600">
-                      {phase.learning_objectives?.map((obj, i) => (
+                      {phase.objectives?.map((obj, i) => (
                         <li key={i}>{obj}</li>
                       ))}
                     </ul>
                   </div>
                   <div className="mb-4">
                     <h5 className="font-semibold text-gray-700 mb-2">Milestones</h5>
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {phase.milestones?.map((milestone, mIndex) => (
-                        <div key={mIndex} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                          <div className="flex items-center gap-2 mb-2">
-                            <CheckCircle className="h-5 w-5 text-green-600" />
-                            <h6 className="font-semibold text-gray-800">{milestone.name}</h6>
-                          </div>
-                          {milestone.tasks && (
-                            <ul className="ml-7 space-y-1">
-                              {milestone.tasks.map((task, tIndex) => (
-                                <li key={tIndex} className="text-sm text-gray-600 flex items-center gap-2">
-                                  <Circle className="h-3 w-3" />
-                                  {task}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
+                        <div key={mIndex} className="bg-gray-50 rounded-lg p-3 border border-gray-200 flex items-start gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                          <p className="text-sm text-gray-700">{milestone}</p>
                         </div>
                       ))}
                     </div>
                   </div>
-                  {phase.tools_covered && phase.tools_covered.length > 0 && (
+                  {phase.tools && phase.tools.length > 0 && (
                     <div>
                       <h5 className="font-semibold text-gray-700 mb-2">Tools Covered</h5>
                       <div className="flex flex-wrap gap-2">
-                        {phase.tools_covered.map((tool, tIndex) => (
+                        {phase.tools.map((tool, tIndex) => (
                           <span key={tIndex} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
                             {tool}
                           </span>
@@ -226,170 +214,130 @@ function RoadmapDisplay({ roadmap, profile }) {
         </div>
       </div>
 
-      {/* Weekly Schedule */}
-      {roadmap.weekly_schedule && roadmap.weekly_schedule.length > 0 && (
+      {/* Weekly Breakdown with Daily Plans */}
+      {roadmap.weekly_plans && roadmap.weekly_plans.length > 0 && (
         <div className="bg-white rounded-xl shadow-xl p-8">
           <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
             <Calendar className="h-6 w-6 text-blue-600" />
-            Weekly Schedule
+            Your Weekly Learning Plan
           </h3>
-          <div className="flex gap-2 mb-6 overflow-x-auto">
-            {roadmap.weekly_schedule.slice(0, 4).map((week, index) => (
-              <button
-                key={index}
-                onClick={() => setSelectedWeek(index + 1)}
-                className={`px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
-                  selectedWeek === index + 1
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                Week {week.week_number || index + 1}
-              </button>
-            ))}
-          </div>
-          {roadmap.weekly_schedule[selectedWeek - 1] && (
-            <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
-              <h4 className="text-xl font-bold text-gray-800 mb-4">
-                Week {roadmap.weekly_schedule[selectedWeek - 1].week_number || selectedWeek}: {roadmap.weekly_schedule[selectedWeek - 1].primary_focus}
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {roadmap.weekly_schedule[selectedWeek - 1].daily_tasks && (
-                  <div>
-                    <h5 className="font-semibold text-gray-700 mb-2">Daily Tasks</h5>
-                    <ul className="space-y-1">
-                      {roadmap.weekly_schedule[selectedWeek - 1].daily_tasks.map((task, i) => (
-                        <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
-                          <Circle className="h-3 w-3 mt-1.5 flex-shrink-0" />
-                          {task}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {roadmap.weekly_schedule[selectedWeek - 1].practice_exercises && (
-                  <div>
-                    <h5 className="font-semibold text-gray-700 mb-2">Practice Exercises</h5>
-                    <ul className="space-y-1">
-                      {roadmap.weekly_schedule[selectedWeek - 1].practice_exercises.map((exercise, i) => (
-                        <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
-                          <Circle className="h-3 w-3 mt-1.5 flex-shrink-0" />
-                          {exercise}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-              {roadmap.weekly_schedule[selectedWeek - 1].time_allocation && (
-                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="text-sm text-blue-800">
-                    <strong>Time Allocation:</strong> {roadmap.weekly_schedule[selectedWeek - 1].time_allocation}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+          <div className="space-y-6">
+            {roadmap.weekly_plans.map((week) => {
+              const isExpanded = expandedWeek === week.week
+              const totalHours = week.daily_plans?.reduce((sum, day) => sum + (day.hours || 0), 0) || 0
+              const completedCount = week.daily_plans?.filter(day => 
+                completedDays.has(`${week.week}-${day.day}`)
+              ).length || 0
+              const completionPercentage = week.daily_plans ? Math.round((completedCount / week.daily_plans.length) * 100) : 0
 
-      {/* Resources Library */}
-      {roadmap.resources && roadmap.resources.length > 0 && (
-        <div className="bg-white rounded-xl shadow-xl p-8">
-          <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <BookOpen className="h-6 w-6 text-blue-600" />
-            Learning Resources
-          </h3>
-          
-          {/* Filters */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <select
-              value={resourceFilters.type}
-              onChange={(e) => setResourceFilters({ ...resourceFilters, type: e.target.value })}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            >
-              <option value="all">All Types</option>
-              <option value="Course">Course</option>
-              <option value="Video">Video</option>
-              <option value="Article">Article</option>
-              <option value="Documentation">Documentation</option>
-              <option value="Book">Book</option>
-            </select>
-            <select
-              value={resourceFilters.difficulty}
-              onChange={(e) => setResourceFilters({ ...resourceFilters, difficulty: e.target.value })}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            >
-              <option value="all">All Difficulties</option>
-              <option value="Beginner">Beginner</option>
-              <option value="Intermediate">Intermediate</option>
-              <option value="Advanced">Advanced</option>
-            </select>
-            <select
-              value={resourceFilters.free}
-              onChange={(e) => setResourceFilters({ ...resourceFilters, free: e.target.value })}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            >
-              <option value="all">All Resources</option>
-              <option value="free">Free Only</option>
-              <option value="paid">Paid Only</option>
-            </select>
-            <button
-              onClick={() => setResourceFilters({ tool: 'all', type: 'all', difficulty: 'all', free: 'all' })}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-            >
-              Clear Filters
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredResources.map((resource, index) => (
-              <div key={index} className="border-2 border-gray-200 rounded-lg p-4 hover:border-blue-400 transition-all">
-                <div className="flex items-start justify-between mb-2">
-                  <h5 className="font-semibold text-gray-800 flex-1">{resource.title}</h5>
-                  {resource.is_free && (
-                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">
-                      Free
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                  <span className="px-2 py-1 bg-gray-100 rounded text-xs">{resource.type}</span>
-                  <span className="px-2 py-1 bg-gray-100 rounded text-xs">{resource.platform}</span>
-                  {resource.difficulty && (
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      resource.difficulty === 'Beginner' ? 'bg-green-100 text-green-800' :
-                      resource.difficulty === 'Intermediate' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {resource.difficulty}
-                    </span>
-                  )}
-                </div>
-                {resource.estimated_time && (
-                  <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
-                    <Clock className="h-4 w-4" />
-                    {resource.estimated_time}
-                  </p>
-                )}
-                {resource.why_this_resource && (
-                  <p className="text-xs text-gray-500 mb-3">{resource.why_this_resource}</p>
-                )}
-                {resource.url && (
-                  <a
-                    href={resource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 text-sm font-medium"
+              return (
+                <div
+                  key={week.week}
+                  className="border-2 border-gray-200 rounded-xl overflow-hidden hover:border-blue-400 transition-all bg-white"
+                >
+                  {/* Week Header - Always visible */}
+                  <button
+                    onClick={() => toggleWeek(week.week)}
+                    className="w-full p-6 flex justify-between items-center hover:bg-gray-50 transition-all text-left"
+                    aria-expanded={isExpanded}
+                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} week ${week.week}`}
                   >
-                    Open Resource <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-              </div>
-            ))}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h4 className="text-xl font-bold text-gray-800">
+                          Week {week.week}: {week.focus}
+                        </h4>
+                        <span className="text-sm text-gray-500 flex items-center gap-1">
+                          <Clock className="h-4 w-4" />
+                          {totalHours}h total
+                        </span>
+                      </div>
+                      {week.objectives && week.objectives.length > 0 && (
+                        <p className="text-sm text-gray-600 line-clamp-2">
+                          {week.objectives[0]}
+                        </p>
+                      )}
+                    </div>
+                    <ChevronDown
+                      className={`h-6 w-6 text-gray-600 transition-transform duration-200 ${
+                        isExpanded ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {/* Daily Plans - Expandable */}
+                  {isExpanded && (
+                    <div className="p-6 bg-gray-50 border-t border-gray-200 animate-in slide-in-from-top-2">
+                      {/* Week Summary Stats */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 bg-white rounded-lg border border-gray-200">
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Total Hours</p>
+                          <p className="text-lg font-bold text-gray-800">{totalHours}h</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Resources</p>
+                          <p className="text-lg font-bold text-gray-800">{week.daily_plans?.length || 0}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Days Completed</p>
+                          <p className="text-lg font-bold text-gray-800">{completedCount}/7</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Progress</p>
+                          <p className="text-lg font-bold text-blue-600">{completionPercentage}%</p>
+                        </div>
+                      </div>
+
+                      {/* Week Objectives */}
+                      {week.objectives && week.objectives.length > 0 && (
+                        <div className="mb-6">
+                          <h5 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                            <Target className="h-5 w-5 text-blue-600" />
+                            This week's objectives:
+                          </h5>
+                          <ul className="list-disc pl-5 space-y-1 text-sm text-gray-600">
+                            {week.objectives.map((obj, i) => (
+                              <li key={i}>{obj}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Prerequisites */}
+                      {week.prerequisites && week.prerequisites.length > 0 && (
+                        <div className="mb-6 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                          <h5 className="font-semibold text-yellow-800 mb-2 text-sm">Prerequisites:</h5>
+                          <ul className="list-disc pl-5 space-y-1 text-sm text-yellow-700">
+                            {week.prerequisites.map((prereq, i) => (
+                              <li key={i}>{prereq}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Daily Plans Grid */}
+                      {week.daily_plans && week.daily_plans.length > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {week.daily_plans.map((day) => (
+                            <DayCard
+                              key={day.day}
+                              day={day}
+                              weekNumber={week.week}
+                              isCompleted={completedDays.has(`${week.week}-${day.day}`)}
+                              onToggleComplete={() => toggleDayComplete(week.week, day.day)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
+
 
       {/* Project Ideas */}
       {roadmap.projects && roadmap.projects.length > 0 && (
@@ -424,16 +372,22 @@ function RoadmapDisplay({ roadmap, profile }) {
                 </div>
                 <div className="flex items-center gap-4 text-sm text-gray-600 mb-4">
                   <span className={`px-2 py-1 rounded ${
-                    project.complexity === 'Beginner' ? 'bg-green-100 text-green-800' :
-                    project.complexity === 'Intermediate' ? 'bg-yellow-100 text-yellow-800' :
+                    project.difficulty === 'Beginner' ? 'bg-green-100 text-green-800' :
+                    project.difficulty === 'Intermediate' ? 'bg-yellow-100 text-yellow-800' :
                     'bg-red-100 text-red-800'
                   }`}>
-                    {project.complexity}
+                    {project.difficulty || project.complexity}
                   </span>
-                  {project.estimated_time && (
+                  {project.estimated_hours && (
                     <span className="flex items-center gap-1">
                       <Clock className="h-4 w-4" />
-                      {project.estimated_time}
+                      {project.estimated_hours}h
+                    </span>
+                  )}
+                  {project.start_week && (
+                    <span className="flex items-center gap-1 text-blue-600">
+                      <Calendar className="h-4 w-4" />
+                      Start Week {project.start_week}
                     </span>
                   )}
                 </div>
@@ -532,6 +486,153 @@ function RoadmapDisplay({ roadmap, profile }) {
               </ul>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// DayCard Component
+function DayCard({ day, weekNumber, isCompleted, onToggleComplete }) {
+  // Color coding based on day of week
+  const getDayColor = (dayNum) => {
+    if (dayNum <= 5) return 'blue' // Monday-Friday
+    if (dayNum === 6) return 'purple' // Saturday
+    return 'green' // Sunday
+  }
+
+  const dayColor = getDayColor(day.day)
+  const colorClasses = {
+    blue: 'border-blue-200 bg-gradient-to-br from-blue-50 to-white',
+    purple: 'border-purple-200 bg-gradient-to-br from-purple-50 to-white',
+    green: 'border-green-200 bg-gradient-to-br from-green-50 to-white'
+  }
+
+  return (
+    <div
+      className={`bg-white rounded-lg shadow-md p-6 border-2 transition-all duration-200 hover:shadow-lg ${
+        colorClasses[dayColor]
+      } ${isCompleted ? 'opacity-75' : ''}`}
+    >
+      {/* Day Header */}
+      <div className="flex justify-between items-start mb-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`text-xs font-semibold px-2 py-1 rounded ${
+              dayColor === 'blue' ? 'bg-blue-100 text-blue-700' :
+              dayColor === 'purple' ? 'bg-purple-100 text-purple-700' :
+              'bg-green-100 text-green-700'
+            }`}>
+              DAY {day.day}
+            </span>
+            {isCompleted && (
+              <CheckCircle className="h-5 w-5 text-green-600" />
+            )}
+          </div>
+          <h4 className="font-bold text-lg text-gray-800">{day.topic}</h4>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <span className="text-sm font-semibold text-gray-500">{day.hours}h</span>
+          <button
+            onClick={onToggleComplete}
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label={isCompleted ? 'Mark as incomplete' : 'Mark as complete'}
+          >
+            {isCompleted ? '✓ Complete' : 'Mark done'}
+          </button>
+        </div>
+      </div>
+
+      {/* Tasks */}
+      {day.tasks && day.tasks.length > 0 && (
+        <div className="mb-4">
+          <p className="text-sm font-semibold mb-2 text-gray-700 flex items-center gap-2">
+            <Check className="h-4 w-4 text-green-500" />
+            What you'll do:
+          </p>
+          <ul className="space-y-1.5">
+            {day.tasks.map((task, i) => (
+              <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
+                <CheckCircle className="h-3.5 w-3.5 text-green-500 mt-0.5 flex-shrink-0" />
+                <span className={isCompleted ? 'line-through text-gray-400' : ''}>{task}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Resource Section */}
+      {day.resource && (
+        <div className="bg-blue-50 rounded-md p-4 my-4 border-l-4 border-blue-500">
+          <p className="text-sm font-semibold mb-2 text-gray-700 flex items-center gap-2">
+            <BookOpenIcon className="h-4 w-4 text-blue-600" />
+            Learning Resource:
+          </p>
+          <div className="space-y-2">
+            <div className="flex gap-2 flex-wrap">
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
+                {day.resource.type || 'Resource'}
+              </span>
+              {day.resource.platform && (
+                <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                  {day.resource.platform}
+                </span>
+              )}
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
+                ✓ FREE
+              </span>
+            </div>
+            {day.resource.title && (
+              <p className="font-medium text-gray-800">{day.resource.title}</p>
+            )}
+            {day.resource.what_to_learn && (
+              <p className="text-sm text-gray-600">{day.resource.what_to_learn}</p>
+            )}
+            {day.resource.duration && (
+              <p className="text-xs text-gray-500 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {day.resource.duration}
+              </p>
+            )}
+            {day.resource.url && (
+              <a
+                href={day.resource.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium mt-2"
+              >
+                Access Resource
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
+            {!day.resource.url && (
+              <div className="text-xs text-yellow-700 bg-yellow-50 p-2 rounded mt-2">
+                ⚠️ Resource URL not available. Please search manually for: {day.resource.title}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Practice Section */}
+      {day.practice && (
+        <div className="bg-purple-50 rounded-md p-4 my-4 border-l-4 border-purple-500">
+          <p className="text-sm font-semibold mb-1 text-gray-700 flex items-center gap-2">
+            <Dumbbell className="h-4 w-4 text-purple-600" />
+            Practice:
+          </p>
+          <p className="text-sm text-gray-700">{day.practice}</p>
+        </div>
+      )}
+
+      {/* Outcome Section */}
+      {day.outcome && (
+        <div className="bg-green-50 rounded-md p-4 my-4 border-l-4 border-green-500">
+          <p className="text-sm font-semibold mb-1 text-gray-700 flex items-center gap-2">
+            <Target className="h-4 w-4 text-green-600" />
+            By end of day:
+          </p>
+          <p className="text-sm text-gray-700">{day.outcome}</p>
         </div>
       )}
     </div>

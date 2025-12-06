@@ -5,6 +5,7 @@ import logging
 import io
 import uuid
 import time
+from concurrent.futures import ThreadPoolExecutor
 from flask import Blueprint, request, jsonify, session
 from services.resume_parser import ResumeParser
 from services.ai_service import AIService
@@ -247,6 +248,84 @@ def analyze_resume():
             'error': 'INTERNAL_ERROR'
         }), 500
 
+@api_bp.route('/analyze-and-recommend', methods=['POST'])
+def analyze_and_recommend():
+    """
+    Combined endpoint: analyze resume AND get recommendations in one call.
+    This saves a round trip and improves user experience.
+    """
+    try:
+        logger.info("Received combined analyze and recommend request")
+        
+        # Get JSON data from request
+        if not request.is_json:
+            return jsonify({
+                'success': False,
+                'message': 'Request must be JSON format',
+                'error': 'INVALID_FORMAT'
+            }), 400
+        
+        data = request.get_json()
+        
+        # Validate resume_text is present
+        if 'resume_text' not in data:
+            return jsonify({
+                'success': False,
+                'message': 'Missing required field: resume_text',
+                'error': 'MISSING_FIELD'
+            }), 400
+        
+        resume_text = data['resume_text']
+        
+        # Validate text is not empty
+        if not resume_text or not resume_text.strip():
+            return jsonify({
+                'success': False,
+                'message': 'resume_text cannot be empty',
+                'error': 'EMPTY_TEXT'
+            }), 400
+        
+        logger.info(f"Analyzing resume and generating recommendations ({len(resume_text)} characters)")
+        
+        # Analyze resume first (required for recommendations)
+        try:
+            profile = ai_service.analyze_resume(resume_text)
+            logger.info("Resume analysis completed, generating recommendations")
+            
+            # Then get recommendations based on profile
+            recommendations = ai_service.recommend_domains(profile)
+            logger.info("Combined analysis and recommendations completed successfully")
+            
+            return jsonify({
+                'success': True,
+                'profile': profile,
+                'recommendations': recommendations.get('recommendations', []),
+                'message': 'Analysis and recommendations completed successfully'
+            }), 200
+            
+        except ValueError as e:
+            logger.error(f"Analysis/recommendation error: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': f'Analysis failed: {str(e)}',
+                'error': 'ANALYSIS_ERROR'
+            }), 400
+        except TimeoutError as e:
+            logger.error(f"Analysis/recommendation timeout: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'Analysis timed out. Please try again.',
+                'error': 'TIMEOUT_ERROR'
+            }), 504
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in analyze_and_recommend: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': 'An unexpected error occurred during analysis.',
+            'error': 'INTERNAL_ERROR'
+        }), 500
+
 @api_bp.route('/recommend-domains', methods=['POST'])
 def recommend_domains():
     """
@@ -434,7 +513,7 @@ def generate_roadmap():
             logger.error(f"Roadmap generation timeout: {str(e)}")
             return jsonify({
                 'success': False,
-                'message': 'Roadmap generation timed out. This can take 10-20 seconds. Please try again.',
+                'message': 'Roadmap generation timed out. This can take up to 15 minutes. Please try again.',
                 'error': 'TIMEOUT_ERROR'
             }), 504
         
