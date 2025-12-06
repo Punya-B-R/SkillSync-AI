@@ -9,8 +9,8 @@ import DebugRoadmapData from './components/DebugRoadmapData'
 import AIChat from './components/AIChat'
 import { generateRoadmap } from './services/api'
 import { saveRoadmap } from './services/roadmapservice'
-import { Loader2, CheckCircle, AlertCircle, BookOpen } from 'lucide-react'
-import { onAuthStateChanged } from "firebase/auth"
+import { Loader2, CheckCircle, AlertCircle, BookOpen, LogOut, User } from 'lucide-react'
+import { onAuthStateChanged, signOut } from "firebase/auth"
 import { auth } from "./firebase"
 import Signup from "./Signup"
 import Login from "./Login"
@@ -542,7 +542,7 @@ function App() {
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="container mx-auto px-4 py-6 text-center text-gray-600 text-sm">
-          <p>© 2024 AI Career Roadmap Generator | Powered by OpenRouter AI</p>
+          <p>© 2025 AI Career Roadmap Generator | Powered by OpenRouter AI</p>
         </div>
       </footer>
     </div>

@@ -1,72 +1,202 @@
-// components/RoadmapDetail.jsx
 import React, { useState, useEffect } from 'react';
 import { getRoadmapById, updateRoadmapProgress } from '../services/roadmapservice';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Check, Clock, Calendar, BookOpen, Target, ChevronDown, ChevronUp, Loader2, AlertCircle, TrendingUp } from 'lucide-react';
 
 const RoadmapDetail = ({ roadmapId, onBack }) => {
     const [roadmap, setRoadmap] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
-    const [completedItems, setCompletedItems] = useState(new Set());
-    const [updating, setUpdating] = useState(false);
+    const [lastSaved, setLastSaved] = useState(null);
+    const [showSavedMessage, setShowSavedMessage] = useState(false);
 
     useEffect(() => {
-        fetchRoadmapDetail();
+        fetchRoadmap();
     }, [roadmapId]);
 
-    const fetchRoadmapDetail = async () => {
+    useEffect(() => {
+        if (lastSaved) {
+            setShowSavedMessage(true);
+            const timer = setTimeout(() => setShowSavedMessage(false), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [lastSaved]);
+
+    const fetchRoadmap = async () => {
         setLoading(true);
         setError(null);
+
         const result = await getRoadmapById(roadmapId);
 
         if (result.success) {
-            setRoadmap(result.roadmap);
-            if (result.roadmap.completedTools) {
-                setCompletedItems(new Set(result.roadmap.completedTools));
+            // Initialize progress tracking if not exists
+            const roadmapData = result.roadmap;
+
+            if (!roadmapData.phases || roadmapData.phases.length === 0) {
+                // Create phases from learningResources if phases don't exist
+                if (roadmapData.learningResources && roadmapData.learningResources.length > 0) {
+                    roadmapData.phases = roadmapData.learningResources.map((resource, idx) => ({
+                        id: `phase-${idx + 1}`,
+                        phase_number: resource.phase_number || idx + 1,
+                        title: resource.toolName || `Phase ${idx + 1}`,
+                        duration_weeks: resource.duration_weeks || 4,
+                        tools_covered: resource.tools_covered || [resource.toolName],
+                        learning_objectives: resource.learning_objectives || [],
+                        milestones: resource.milestones || [],
+                        expanded: idx === 0
+                    }));
+                }
             }
+
+            // Initialize checkboxes for objectives and milestones if not exists
+            roadmapData.phases = roadmapData.phases.map(phase => ({
+                ...phase,
+                learning_objectives: (phase.learning_objectives || []).map(obj =>
+                    typeof obj === 'string'
+                        ? { id: `obj-${Date.now()}-${Math.random()}`, text: obj, completed: false }
+                        : obj
+                ),
+                milestones: (phase.milestones || []).map(ms =>
+                    typeof ms === 'string'
+                        ? { id: `ms-${Date.now()}-${Math.random()}`, text: ms, completed: false }
+                        : ms
+                )
+            }));
+
+            setRoadmap(roadmapData);
         } else {
-            setError('Failed to load roadmap');
+            setError(result.error || 'Failed to load roadmap');
         }
+
         setLoading(false);
     };
 
-    const handleToggleComplete = async (toolName) => {
-        setUpdating(true);
-        const newCompleted = new Set(completedItems);
+    const calculateProgress = () => {
+        if (!roadmap || !roadmap.phases) return 0;
 
-        if (newCompleted.has(toolName)) {
-            newCompleted.delete(toolName);
-        } else {
-            newCompleted.add(toolName);
-        }
+        let totalItems = 0;
+        let completedItems = 0;
 
-        const completedArray = Array.from(newCompleted);
-        const progress = Math.round((completedArray.length / roadmap.selectedTools.length) * 100);
-
-        const result = await updateRoadmapProgress(roadmapId, {
-            completedTools: completedArray,
-            progress: progress,
-            currentTool: completedArray.length < roadmap.selectedTools.length
-                ? roadmap.selectedTools[completedArray.length]?.name
-                : null
+        roadmap.phases.forEach(phase => {
+            (phase.learning_objectives || []).forEach(obj => {
+                totalItems++;
+                if (obj.completed) completedItems++;
+            });
+            (phase.milestones || []).forEach(ms => {
+                totalItems++;
+                if (ms.completed) completedItems++;
+            });
         });
 
+        return totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+    };
+
+    const getPhaseProgress = (phase) => {
+        const objectives = phase.learning_objectives || [];
+        const milestones = phase.milestones || [];
+        const total = objectives.length + milestones.length;
+
+        if (total === 0) return 0;
+
+        const completed =
+            objectives.filter(obj => obj.completed).length +
+            milestones.filter(ms => ms.completed).length;
+
+        return Math.round((completed / total) * 100);
+    };
+
+    const toggleObjective = async (phaseId, objectiveId) => {
+        const updatedRoadmap = {
+            ...roadmap,
+            phases: roadmap.phases.map(phase => {
+                if (phase.id === phaseId) {
+                    return {
+                        ...phase,
+                        learning_objectives: phase.learning_objectives.map(obj =>
+                            obj.id === objectiveId ? { ...obj, completed: !obj.completed } : obj
+                        )
+                    };
+                }
+                return phase;
+            })
+        };
+
+        setRoadmap(updatedRoadmap);
+        await saveProgress(updatedRoadmap);
+    };
+
+    const toggleMilestone = async (phaseId, milestoneId) => {
+        const updatedRoadmap = {
+            ...roadmap,
+            phases: roadmap.phases.map(phase => {
+                if (phase.id === phaseId) {
+                    return {
+                        ...phase,
+                        milestones: phase.milestones.map(ms =>
+                            ms.id === milestoneId ? { ...ms, completed: !ms.completed } : ms
+                        )
+                    };
+                }
+                return phase;
+            })
+        };
+
+        setRoadmap(updatedRoadmap);
+        await saveProgress(updatedRoadmap);
+    };
+
+    const togglePhaseExpansion = (phaseId) => {
+        setRoadmap(prev => ({
+            ...prev,
+            phases: prev.phases.map(phase =>
+                phase.id === phaseId ? { ...phase, expanded: !phase.expanded } : phase
+            )
+        }));
+    };
+
+    const saveProgress = async (updatedRoadmap) => {
+        setSaving(true);
+
+        const progress = calculateProgressFromRoadmap(updatedRoadmap);
+
+        const progressData = {
+            phases: updatedRoadmap.phases,
+            progress: progress
+        };
+
+        const result = await updateRoadmapProgress(roadmapId, progressData);
+
         if (result.success) {
-            setCompletedItems(newCompleted);
-            setRoadmap({
-                ...roadmap,
-                completedTools: completedArray,
-                progress: progress
-            });
+            setLastSaved(new Date());
         } else {
-            setError('Failed to update progress');
+            setError('Failed to save progress');
+            setTimeout(() => setError(null), 3000);
         }
-        setUpdating(false);
+
+        setSaving(false);
+    };
+
+    const calculateProgressFromRoadmap = (roadmapData) => {
+        let totalItems = 0;
+        let completedItems = 0;
+
+        (roadmapData.phases || []).forEach(phase => {
+            (phase.learning_objectives || []).forEach(obj => {
+                totalItems++;
+                if (obj.completed) completedItems++;
+            });
+            (phase.milestones || []).forEach(ms => {
+                totalItems++;
+                if (ms.completed) completedItems++;
+            });
+        });
+
+        return totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
     };
 
     if (loading) {
         return (
-            <div className="flex justify-center items-center min-h-screen">
+            <div className="min-h-screen flex items-center justify-center">
                 <div className="text-center">
                     <Loader2 className="h-12 w-12 text-blue-600 animate-spin mx-auto mb-4" />
                     <p className="text-gray-600">Loading roadmap details...</p>
@@ -77,19 +207,17 @@ const RoadmapDetail = ({ roadmapId, onBack }) => {
 
     if (error && !roadmap) {
         return (
-            <div className="max-w-4xl mx-auto px-4 py-8">
-                <div className="bg-red-50 border-2 border-red-200 rounded-xl p-6 flex items-start gap-3">
-                    <AlertCircle className="h-6 w-6 text-red-600 flex-shrink-0" />
-                    <div>
-                        <p className="text-red-800 font-semibold mb-1">Error</p>
-                        <p className="text-red-700">{error}</p>
-                        <button
-                            onClick={onBack}
-                            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                        >
-                            Go Back
-                        </button>
-                    </div>
+            <div className="min-h-screen flex items-center justify-center p-4">
+                <div className="bg-red-50 border-2 border-red-200 rounded-xl p-6 max-w-md">
+                    <AlertCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+                    <h3 className="text-xl font-bold text-red-900 mb-2 text-center">Error Loading Roadmap</h3>
+                    <p className="text-red-700 text-center mb-4">{error}</p>
+                    <button
+                        onClick={onBack}
+                        className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                    >
+                        Go Back
+                    </button>
                 </div>
             </div>
         );
@@ -97,329 +225,269 @@ const RoadmapDetail = ({ roadmapId, onBack }) => {
 
     if (!roadmap) {
         return (
-            <div className="text-center py-12">
-                <p className="text-gray-600">Roadmap not found</p>
-                <button
-                    onClick={onBack}
-                    className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                    Go Back
-                </button>
+            <div className="min-h-screen flex items-center justify-center p-4">
+                <div className="text-center">
+                    <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-xl font-bold text-gray-900 mb-2">Roadmap Not Found</h3>
+                    <button
+                        onClick={onBack}
+                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    >
+                        Go Back
+                    </button>
+                </div>
             </div>
         );
     }
 
+    const overallProgress = calculateProgress();
+    const totalPhases = roadmap.phases?.length || 0;
+    const completedPhases = roadmap.phases?.filter(p => getPhaseProgress(p) === 100).length || 0;
+
     return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            {/* Error Banner */}
-            {error && (
-                <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-                    <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                        <p className="text-red-800 font-semibold mb-1">Error</p>
-                        <p className="text-red-700 text-sm">{error}</p>
-                        <button
-                            onClick={() => setError(null)}
-                            className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
-                        >
-                            Dismiss
-                        </button>
-                    </div>
+        <div className="max-w-5xl mx-auto p-6">
+            {/* Saving Indicator */}
+            {saving && (
+                <div className="fixed top-20 right-6 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50 animate-fade-in">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Saving progress...</span>
                 </div>
             )}
 
-            {/* Overall Progress */}
-            <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-                <div className="flex items-center justify-between mb-4">
+            {/* Last Saved Indicator */}
+            {showSavedMessage && !saving && (
+                <div className="fixed top-20 right-6 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50 animate-fade-in">
+                    <Check className="h-4 w-4" />
+                    <span className="text-sm">Progress saved!</span>
+                </div>
+            )}
+
+            {/* Error Message */}
+            {error && roadmap && (
+                <div className="fixed top-20 right-6 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50 animate-fade-in">
+                    <AlertCircle className="h-4 w-4" />
+                    <span className="text-sm">{error}</span>
+                </div>
+            )}
+
+            {/* Overall Progress Card */}
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-6 border border-slate-200">
+                <div className="flex justify-between items-start mb-4">
                     <div>
-                        <h2 className="text-xl font-semibold text-gray-900">Overall Progress</h2>
-                        <p className="text-sm text-gray-600 mt-1">
-                            {roadmap.profileAnalysis?.topStrengths?.join(' • ') || 'Your Learning Journey'}
-                        </p>
+                        <h2 className="text-2xl font-bold text-slate-900">Overall Progress</h2>
+                        <p className="text-slate-600 text-sm mt-1">Your Learning Journey</p>
                     </div>
                     <div className="text-right">
-                        <div className="text-3xl font-bold text-blue-600">{roadmap.progress || 0}%</div>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-1 ${roadmap.status === 'active' ? 'bg-green-100 text-green-800' :
-                            roadmap.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                                'bg-gray-100 text-gray-800'
-                            }`}>
-                            {roadmap.status}
-                        </span>
+                        <div className="text-4xl font-bold text-blue-600">{overallProgress}%</div>
+                        <span className="text-xs text-slate-500 uppercase tracking-wide">Complete</span>
                     </div>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-4 mb-4">
+
+                <div className="w-full bg-slate-200 rounded-full h-3 mb-6">
                     <div
-                        className="bg-blue-600 h-4 rounded-full transition-all duration-500 flex items-center justify-end pr-2"
-                        style={{ width: `${roadmap.progress || 0}%` }}
-                    >
-                        {roadmap.progress > 5 && (
-                            <span className="text-xs text-white font-semibold">{roadmap.progress}%</span>
-                        )}
-                    </div>
+                        className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${overallProgress}%` }}
+                    />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-                    <div className="bg-gray-50 rounded-lg p-3">
-                        <span className="text-gray-600 block mb-1">Completed</span>
-                        <span className="text-lg font-semibold text-gray-900">
-                            {completedItems.size} / {roadmap.selectedTools?.length || 0}
-                        </span>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="flex items-start gap-3">
+                        <div className="p-2 bg-blue-50 rounded-lg">
+                            <Check className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div>
+                            <div className="text-sm text-slate-600">Completed</div>
+                            <div className="text-xl font-semibold text-slate-900">
+                                {roadmap.phases?.reduce((acc, p) =>
+                                    acc + (p.learning_objectives?.filter(o => o.completed).length || 0) +
+                                    (p.milestones?.filter(m => m.completed).length || 0), 0)} /
+                                {roadmap.phases?.reduce((acc, p) =>
+                                    acc + (p.learning_objectives?.length || 0) + (p.milestones?.length || 0), 0)}
+                            </div>
+                        </div>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                        <span className="text-gray-600 block mb-1">Duration</span>
-                        <span className="text-lg font-semibold text-gray-900">
-                            {roadmap.learningPlan?.estimatedWeeks || 'N/A'} weeks
-                        </span>
+
+                    <div className="flex items-start gap-3">
+                        <div className="p-2 bg-purple-50 rounded-lg">
+                            <Clock className="w-5 h-5 text-purple-600" />
+                        </div>
+                        <div>
+                            <div className="text-sm text-slate-600">Duration</div>
+                            <div className="text-xl font-semibold text-slate-900">
+                                {roadmap.learningPlan?.estimatedWeeks || roadmap.estimatedWeeks || 'N/A'} weeks
+                            </div>
+                        </div>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                        <span className="text-gray-600 block mb-1">Hours/Week</span>
-                        <span className="text-lg font-semibold text-gray-900">
-                            {roadmap.learningPreferences?.hoursPerWeek || 'N/A'} hrs
-                        </span>
+
+                    <div className="flex items-start gap-3">
+                        <div className="p-2 bg-amber-50 rounded-lg">
+                            <Calendar className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <div>
+                            <div className="text-sm text-slate-600">Hours/Week</div>
+                            <div className="text-xl font-semibold text-slate-900">
+                                {roadmap.learningPreferences?.hoursPerWeek || roadmap.learningPlan?.hoursPerWeek || 6} hrs
+                            </div>
+                        </div>
                     </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                        <span className="text-gray-600 block mb-1">Learning Style</span>
-                        <span className="text-lg font-semibold text-gray-900 capitalize">
-                            {roadmap.learningPreferences?.learningStyle || 'Balanced'}
-                        </span>
+
+                    <div className="flex items-start gap-3">
+                        <div className="p-2 bg-green-50 rounded-lg">
+                            <TrendingUp className="w-5 h-5 text-green-600" />
+                        </div>
+                        <div>
+                            <div className="text-sm text-slate-600">Phases Done</div>
+                            <div className="text-xl font-semibold text-slate-900">
+                                {completedPhases} / {totalPhases}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Learning Tools */}
-            <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-                <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                    Learning Path
-                    {updating && <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />}
-                </h2>
+            {/* Learning Path */}
+            <div className="bg-white rounded-xl shadow-lg p-6 border border-slate-200">
+                <h2 className="text-2xl font-bold text-slate-900 mb-6">Learning Path</h2>
 
-                {/* If roadmap has phases, show phases structure */}
-                {roadmap.phases && roadmap.phases.length > 0 ? (
-                    <div className="space-y-6">
-                        {roadmap.phases.map((phase, phaseIndex) => (
-                            <div key={phaseIndex} className="border-2 border-gray-200 rounded-lg p-5">
-                                <div className="mb-4">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                                        Phase {phase.phase_number}: {phase.title}
-                                    </h3>
-                                    <div className="flex flex-wrap gap-2 mb-3">
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                            {phase.duration_weeks} weeks
-                                        </span>
-                                        {phase.tools_covered?.map((tool, idx) => (
-                                            <span key={idx} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                {tool}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
+                <div className="space-y-4">
+                    {roadmap.phases?.map((phase, index) => {
+                        const phaseProgress = getPhaseProgress(phase);
 
-                                {/* Learning Objectives */}
-                                {phase.learning_objectives && phase.learning_objectives.length > 0 && (
-                                    <div className="mb-4">
-                                        <h4 className="font-medium text-gray-900 text-sm mb-2">Learning Objectives:</h4>
-                                        <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
-                                            {phase.learning_objectives.map((objective, idx) => (
-                                                <li key={idx}>{objective}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
-
-                                {/* Milestones */}
-                                {phase.milestones && phase.milestones.length > 0 && (
-                                    <div>
-                                        <h4 className="font-medium text-gray-900 text-sm mb-2">Milestones:</h4>
-                                        <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
-                                            {phase.milestones.map((milestone, idx) => (
-                                                <li key={idx}>{milestone}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    /* Otherwise show tools structure */
-                    <div className="space-y-4">
-                        {roadmap.selectedTools?.map((tool, index) => {
-                            const isCompleted = completedItems.has(tool.name);
-                            const resources = roadmap.learningResources?.find(lr => lr.toolName === tool.name);
-
-                            return (
+                        return (
+                            <div key={phase.id} className="border border-slate-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
+                                {/* Phase Header */}
                                 <div
-                                    key={index}
-                                    className={`border-2 rounded-lg p-5 transition-all ${isCompleted
-                                        ? 'bg-green-50 border-green-300'
-                                        : 'bg-white border-gray-200 hover:border-blue-300'
-                                        }`}
+                                    className="bg-gradient-to-r from-slate-50 to-blue-50 p-4 cursor-pointer hover:from-slate-100 hover:to-blue-100 transition-colors"
+                                    onClick={() => togglePhaseExpansion(phase.id)}
                                 >
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex items-start space-x-4 flex-1">
-                                            <input
-                                                type="checkbox"
-                                                checked={isCompleted}
-                                                onChange={() => handleToggleComplete(tool.name)}
-                                                disabled={updating}
-                                                className="mt-1.5 h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer disabled:opacity-50"
-                                            />
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-4 flex-1">
+                                            <div className="flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-full font-semibold">
+                                                P{phase.phase_number || index + 1}
+                                            </div>
                                             <div className="flex-1">
-                                                <h3 className={`text-lg font-semibold mb-2 ${isCompleted ? 'line-through text-gray-500' : 'text-gray-900'
-                                                    }`}>
-                                                    {index + 1}. {tool.name}
-                                                </h3>
-                                                {tool.description && (
-                                                    <p className="text-sm text-gray-600 mb-2">{tool.description}</p>
-                                                )}
-                                                <div className="flex flex-wrap gap-2 mb-3">
-                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                        {tool.category}
+                                                <h3 className="font-semibold text-slate-900 mb-1">{phase.title}</h3>
+                                                <div className="flex items-center gap-4 text-sm text-slate-600">
+                                                    <span className="flex items-center gap-1">
+                                                        <Clock className="w-4 h-4" />
+                                                        {phase.duration_weeks} weeks
                                                     </span>
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${tool.difficulty === 'High' || tool.difficulty === 'Challenging' ? 'bg-red-100 text-red-800' :
-                                                        tool.difficulty === 'Moderate' || tool.difficulty === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                                                            'bg-green-100 text-green-800'
-                                                        }`}>
-                                                        {tool.difficulty}
-                                                    </span>
-                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                                        {tool.estimatedTime}
-                                                    </span>
-                                                </div>
-
-                                                {/* Learning Resources */}
-                                                {resources && resources.resources && resources.resources.length > 0 && (
-                                                    <div className="mt-4 space-y-2">
-                                                        <h4 className="font-medium text-gray-900 text-sm flex items-center gap-2">
-                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                                            </svg>
-                                                            Learning Resources
-                                                        </h4>
-                                                        <div className="grid gap-2">
-                                                            {resources.resources.slice(0, 3).map((resource, idx) => (
-                                                                <a
-                                                                    key={idx}
-                                                                    href={resource.url}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="block p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors border border-gray-200"
-                                                                >
-                                                                    <div className="flex items-start justify-between gap-2">
-                                                                        <div className="flex-1">
-                                                                            <p className="text-sm font-medium text-gray-900 mb-1">{resource.title}</p>
-                                                                            <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-                                                                                <span className="inline-flex items-center">
-                                                                                    {resource.type}
-                                                                                </span>
-                                                                                <span>•</span>
-                                                                                <span>{resource.difficulty}</span>
-                                                                                <span>•</span>
-                                                                                <span>{resource.duration}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                        <svg className="h-5 w-5 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                                        </svg>
-                                                                    </div>
-                                                                </a>
+                                                    {phase.tools_covered && phase.tools_covered.length > 0 && (
+                                                        <span className="flex gap-1 flex-wrap">
+                                                            {phase.tools_covered.slice(0, 2).map((tool, i) => (
+                                                                <span key={i} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                                                                    {tool}
+                                                                </span>
                                                             ))}
-                                                        </div>
-                                                    </div>
+                                                            {phase.tools_covered.length > 2 && (
+                                                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                                                                    +{phase.tools_covered.length - 2}
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-right">
+                                                <div className="text-2xl font-bold text-blue-600">{phaseProgress}%</div>
+                                                {phaseProgress === 100 && (
+                                                    <span className="text-xs text-green-600 font-medium">Complete!</span>
                                                 )}
                                             </div>
+                                            {phase.expanded ?
+                                                <ChevronUp className="w-5 h-5 text-slate-400" /> :
+                                                <ChevronDown className="w-5 h-5 text-slate-400" />
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-3">
+                                        <div className="w-full bg-slate-200 rounded-full h-2">
+                                            <div
+                                                className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-500 ease-out"
+                                                style={{ width: `${phaseProgress}%` }}
+                                            />
                                         </div>
                                     </div>
                                 </div>
-                            );
-                        })}
-                    </div>
-                )}
+
+                                {/* Phase Content */}
+                                {phase.expanded && (
+                                    <div className="p-6 bg-white">
+                                        {/* Learning Objectives */}
+                                        {phase.learning_objectives && phase.learning_objectives.length > 0 && (
+                                            <div className="mb-6">
+                                                <h4 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                                                    <Target className="w-5 h-5 text-blue-600" />
+                                                    Learning Objectives
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {phase.learning_objectives.map(objective => (
+                                                        <label
+                                                            key={objective.id}
+                                                            className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors group"
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={objective.completed || false}
+                                                                onChange={() => toggleObjective(phase.id, objective.id)}
+                                                                className="mt-1 w-5 h-5 text-blue-600 border-slate-300 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                                            />
+                                                            <span className={`flex-1 transition-all ${objective.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                                                {objective.text}
+                                                            </span>
+                                                            {objective.completed && (
+                                                                <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                                                                    ✓ Done
+                                                                </span>
+                                                            )}
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Milestones */}
+                                        {phase.milestones && phase.milestones.length > 0 && (
+                                            <div>
+                                                <h4 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                                                    <Check className="w-5 h-5 text-green-600" />
+                                                    Milestones
+                                                </h4>
+                                                <div className="space-y-2">
+                                                    {phase.milestones.map(milestone => (
+                                                        <label
+                                                            key={milestone.id}
+                                                            className="flex items-start gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors group"
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={milestone.completed || false}
+                                                                onChange={() => toggleMilestone(phase.id, milestone.id)}
+                                                                className="mt-1 w-5 h-5 text-green-600 border-slate-300 rounded focus:ring-2 focus:ring-green-500 cursor-pointer"
+                                                            />
+                                                            <span className={`flex-1 transition-all ${milestone.completed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                                                {milestone.text}
+                                                            </span>
+                                                            {milestone.completed && (
+                                                                <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                                                                    ✓ Achieved
+                                                                </span>
+                                                            )}
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
-
-            {/* Project Ideas */}
-            {roadmap.projectIdeas && roadmap.projectIdeas.length > 0 && (
-                <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                        <svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                        </svg>
-                        Project Ideas
-                    </h2>
-                    <div className="grid gap-4 md:grid-cols-2">
-                        {roadmap.projectIdeas.map((project, index) => (
-                            <div key={index} className="border-2 border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors">
-                                <h3 className="font-semibold text-gray-900 mb-2">{project.title}</h3>
-                                <p className="text-sm text-gray-600 mb-3">{project.description}</p>
-                                <div className="flex flex-wrap gap-2 mb-3">
-                                    {project.technologies?.map((tech, idx) => (
-                                        <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                            {tech}
-                                        </span>
-                                    ))}
-                                </div>
-                                <div className="flex items-center gap-4 text-xs text-gray-500">
-                                    <span className="inline-flex items-center gap-1">
-                                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                        </svg>
-                                        {project.difficulty}
-                                    </span>
-                                    <span className="inline-flex items-center gap-1">
-                                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        {project.estimatedTime}
-                                    </span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Skill Gap Analysis */}
-            {roadmap.skillGaps && (
-                <div className="bg-white rounded-lg shadow-lg p-6">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                        <svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                        Skill Gap Analysis
-                    </h2>
-                    <div className="grid md:grid-cols-2 gap-6">
-                        <div>
-                            <h3 className="font-semibold text-green-900 mb-3 flex items-center gap-2">
-                                <svg className="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                Your Strengths
-                            </h3>
-                            <div className="flex flex-wrap gap-2">
-                                {roadmap.skillGaps.yourStrengths?.slice(0, 15).map((skill, idx) => (
-                                    <span key={idx} className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-green-100 text-green-800 font-medium">
-                                        {skill}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                        <div>
-                            <h3 className="font-semibold text-orange-900 mb-3 flex items-center gap-2">
-                                <svg className="h-5 w-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                </svg>
-                                Skills to Develop
-                            </h3>
-                            <div className="flex flex-wrap gap-2">
-                                {roadmap.skillGaps.skillsToDevelop?.slice(0, 15).map((skill, idx) => (
-                                    <span key={idx} className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-orange-100 text-orange-800 font-medium">
-                                        {skill}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

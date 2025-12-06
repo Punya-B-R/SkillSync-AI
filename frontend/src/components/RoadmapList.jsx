@@ -1,8 +1,7 @@
-// components/RoadmapList.jsx
 import React, { useState, useEffect } from 'react';
 import { getUserRoadmaps, deleteRoadmap, updateRoadmapStatus } from '../services/roadmapservice';
 import { auth } from '../firebase';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye, Trash2, Calendar, Clock, BookOpen, TrendingUp } from 'lucide-react';
 
 const RoadmapList = ({ onViewDetail, onBackToGenerator }) => {
     const [roadmaps, setRoadmaps] = useState([]);
@@ -58,6 +57,49 @@ const RoadmapList = ({ onViewDetail, onBackToGenerator }) => {
         });
     };
 
+    // Get roadmap title from various possible sources
+    const getRoadmapTitle = (roadmap) => {
+        if (roadmap.selectedTools && roadmap.selectedTools.length > 0) {
+            return roadmap.selectedTools.slice(0, 2).map(t => t.name).join(', ');
+        }
+        if (roadmap.profileAnalysis?.topStrengths && roadmap.profileAnalysis.topStrengths.length > 0) {
+            return roadmap.profileAnalysis.topStrengths.slice(0, 2).join(', ');
+        }
+        if (roadmap.phases && roadmap.phases.length > 0) {
+            return roadmap.phases[0].title || 'Learning Roadmap';
+        }
+        return 'Learning Roadmap';
+    };
+
+    const getProgressStats = (roadmap) => {
+        const progress = roadmap.progress || 0;
+        let completedItems = 0;
+        let totalItems = 0;
+
+        if (roadmap.phases && Array.isArray(roadmap.phases)) {
+            roadmap.phases.forEach(phase => {
+                if (phase.learning_objectives) {
+                    phase.learning_objectives.forEach(obj => {
+                        totalItems++;
+                        if (obj.completed) completedItems++;
+                    });
+                }
+                if (phase.milestones) {
+                    phase.milestones.forEach(ms => {
+                        totalItems++;
+                        if (ms.completed) completedItems++;
+                    });
+                }
+            });
+        }
+
+        return {
+            progress,
+            completedItems,
+            totalItems
+        };
+    };
+
     if (loading) {
         return (
             <div className="flex justify-center items-center min-h-screen">
@@ -78,13 +120,16 @@ const RoadmapList = ({ onViewDetail, onBackToGenerator }) => {
                         <button
                             key={status}
                             onClick={() => setFilter(status)}
-                            className={`py-4 px-1 border-b-2 font-medium text-sm capitalize ${filter === status
-                                    ? 'border-blue-500 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            className={`py-4 px-1 border-b-2 font-medium text-sm capitalize transition-colors ${filter === status
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                                 }`}
                         >
                             {status}
-                            <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2.5 rounded-full text-xs">
+                            <span className={`ml-2 py-0.5 px-2.5 rounded-full text-xs ${filter === status
+                                ? 'bg-blue-100 text-blue-600'
+                                : 'bg-gray-100 text-gray-600'
+                                }`}>
                                 {status === 'all'
                                     ? roadmaps.length
                                     : roadmaps.filter(r => r.status === status).length
@@ -98,9 +143,7 @@ const RoadmapList = ({ onViewDetail, onBackToGenerator }) => {
             {/* Roadmaps Grid */}
             {filteredRoadmaps.length === 0 ? (
                 <div className="text-center py-12 bg-white rounded-lg shadow">
-                    <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                    <BookOpen className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                     <h3 className="mt-2 text-sm font-medium text-gray-900">No roadmaps found</h3>
                     <p className="mt-1 text-sm text-gray-500">
                         {filter === 'all'
@@ -115,91 +158,127 @@ const RoadmapList = ({ onViewDetail, onBackToGenerator }) => {
                     </button>
                 </div>
             ) : (
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {filteredRoadmaps.map((roadmap) => (
-                        <div key={roadmap.id} className="bg-white overflow-hidden shadow rounded-lg hover:shadow-lg transition-shadow">
-                            <div className="p-5">
-                                <div className="flex items-center justify-between mb-3">
-                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roadmap.status === 'active' ? 'bg-green-100 text-green-800' :
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
+                    {filteredRoadmaps.map((roadmap) => {
+                        const stats = getProgressStats(roadmap);
+
+                        return (
+                            <div
+                                key={roadmap.id}
+                                className="bg-white overflow-hidden shadow rounded-xl hover:shadow-xl transition-all border border-gray-200 hover:border-blue-300"
+                            >
+                                <div className="p-6">
+                                    {/* Header */}
+                                    <div className="flex items-start justify-between mb-4">
+                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${roadmap.status === 'active' ? 'bg-green-100 text-green-800' :
                                             roadmap.status === 'completed' ? 'bg-blue-100 text-blue-800' :
                                                 'bg-gray-100 text-gray-800'
-                                        }`}>
-                                        {roadmap.status}
-                                    </span>
-                                    <div className="flex space-x-2">
-                                        <button
-                                            onClick={() => onViewDetail(roadmap.id)}
-                                            className="text-blue-600 hover:text-blue-900"
-                                            title="View Details"
-                                        >
-                                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                            </svg>
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(roadmap.id)}
-                                            className="text-red-600 hover:text-red-900"
-                                            title="Delete"
-                                        >
-                                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <h3 className="text-lg font-medium text-gray-900 mb-2 line-clamp-2">
-                                    {roadmap.profileAnalysis?.topStrengths?.length > 0
-                                        ? roadmap.profileAnalysis.topStrengths.slice(0, 2).join(', ')
-                                        : roadmap.selectedTools?.length > 0
-                                            ? roadmap.selectedTools.slice(0, 2).map(t => t.name).join(', ')
-                                            : 'Learning Roadmap'}
-                                </h3>
-
-                                <div className="space-y-2 text-sm text-gray-600">
-                                    <div className="flex items-center">
-                                        <svg className="h-4 w-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                        </svg>
-                                        Created: {formatDate(roadmap.createdAt)}
-                                    </div>
-                                    <div className="flex items-center">
-                                        <svg className="h-4 w-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                        Duration: {roadmap.learningPlan?.estimatedWeeks || roadmap.estimatedWeeks || 'N/A'} weeks
-                                    </div>
-                                    <div className="flex items-center">
-                                        <svg className="h-4 w-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                                        </svg>
-                                        Tools: {roadmap.selectedTools?.length || 0}
-                                    </div>
-                                </div>
-
-                                {/* Progress Bar */}
-                                {roadmap.progress !== undefined && (
-                                    <div className="mt-4">
-                                        <div className="flex justify-between text-xs text-gray-600 mb-1">
-                                            <span>Progress</span>
-                                            <span>{roadmap.progress}%</span>
+                                            }`}>
+                                            {roadmap.status}
+                                        </span>
+                                        <div className="flex space-x-2">
+                                            <button
+                                                onClick={() => onViewDetail(roadmap.id)}
+                                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                title="View Details"
+                                            >
+                                                <Eye className="h-5 w-5" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(roadmap.id)}
+                                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                title="Delete"
+                                            >
+                                                <Trash2 className="h-5 w-5" />
+                                            </button>
                                         </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-2">
+                                    </div>
+
+                                    {/* Title */}
+                                    <h3 className="text-xl font-bold text-gray-900 mb-4 line-clamp-2">
+                                        {getRoadmapTitle(roadmap)}
+                                    </h3>
+
+                                    {/* Progress Section */}
+                                    <div className="mb-4">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-sm font-medium text-gray-700">Progress</span>
+                                            <span className="text-2xl font-bold text-blue-600">{stats.progress}%</span>
+                                        </div>
+                                        <div className="w-full bg-gray-200 rounded-full h-3">
                                             <div
-                                                className="bg-blue-600 h-2 rounded-full transition-all"
-                                                style={{ width: `${roadmap.progress}%` }}
+                                                className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-500"
+                                                style={{ width: `${stats.progress}%` }}
                                             ></div>
                                         </div>
+                                        {stats.totalItems > 0 && (
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                {stats.completedItems} of {stats.totalItems} tasks completed
+                                            </p>
+                                        )}
                                     </div>
-                                )}
 
-                                {/* Status Change Dropdown */}
-                                <div className="mt-4">
+                                    {/* Info Grid */}
+                                    <div className="grid grid-cols-2 gap-3 mb-4">
+                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                            <Calendar className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="text-xs text-gray-500">Created</p>
+                                                <p className="font-medium">{formatDate(roadmap.createdAt)}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                            <Clock className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="text-xs text-gray-500">Duration</p>
+                                                <p className="font-medium">
+                                                    {roadmap.learningPlan?.estimatedWeeks || roadmap.estimatedWeeks || 'N/A'} weeks
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                            <BookOpen className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="text-xs text-gray-500">Tools</p>
+                                                <p className="font-medium">{roadmap.selectedTools?.length || 0}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                            <TrendingUp className="h-4 w-4 text-gray-400" />
+                                            <div>
+                                                <p className="text-xs text-gray-500">Hours/Week</p>
+                                                <p className="font-medium">
+                                                    {roadmap.learningPreferences?.hoursPerWeek ||
+                                                        roadmap.learningPlan?.hoursPerWeek || 6} hrs
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Tools/Phases */}
+                                    {roadmap.selectedTools && roadmap.selectedTools.length > 0 && (
+                                        <div className="mb-4">
+                                            <p className="text-xs text-gray-500 mb-2">Learning</p>
+                                            <div className="flex flex-wrap gap-1">
+                                                {roadmap.selectedTools.slice(0, 3).map((tool, idx) => (
+                                                    <span key={idx} className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium">
+                                                        {tool.name}
+                                                    </span>
+                                                ))}
+                                                {roadmap.selectedTools.length > 3 && (
+                                                    <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium">
+                                                        +{roadmap.selectedTools.length - 3} more
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Status Dropdown */}
                                     <select
                                         value={roadmap.status}
                                         onChange={(e) => handleStatusChange(roadmap.id, e.target.value)}
-                                        className="block w-full pl-3 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md"
+                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                                     >
                                         <option value="active">Active</option>
                                         <option value="completed">Completed</option>
@@ -207,8 +286,8 @@ const RoadmapList = ({ onViewDetail, onBackToGenerator }) => {
                                     </select>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>
