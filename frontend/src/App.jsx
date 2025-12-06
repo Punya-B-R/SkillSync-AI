@@ -230,6 +230,30 @@ function App() {
     setCurrentRoadmapId(null)
   }
 
+  // NEW: Logout handler
+  const handleLogout = async () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      try {
+        await signOut(auth);
+        // Reset all state
+        setStep(1)
+        setResumeData(null)
+        setProfile(null)
+        setSelectedTools([])
+        setPreferences({})
+        setRoadmap(null)
+        setError(null)
+        setCurrentRoadmapId(null)
+        setView('generator')
+        setSelectedRoadmapId(null)
+        // User state will be automatically cleared by onAuthStateChanged
+      } catch (error) {
+        console.error('Error logging out:', error);
+        setError('Failed to logout. Please try again.');
+      }
+    }
+  }
+
   const steps = [
     { number: 1, name: 'Upload Resume', icon: '📄' },
     { number: 2, name: 'Select Tools', icon: '🛠️' },
@@ -271,12 +295,30 @@ function App() {
                 <h1 className="text-2xl font-bold text-gray-800">My Learning Roadmaps</h1>
                 <p className="text-sm text-gray-600">Manage and track your learning journey</p>
               </div>
-              <button
-                onClick={handleBackToGenerator}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Create New Roadmap
-              </button>
+              <div className="flex items-center gap-2">
+                {/* User Email Display */}
+                <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+                  <User className="h-4 w-4 text-gray-600" />
+                  <span className="text-sm text-gray-700">{user?.email}</span>
+                </div>
+
+                <button
+                  onClick={handleBackToGenerator}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Create New Roadmap
+                </button>
+
+                {/* Logout Button */}
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
+                  title="Logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+              </div>
             </div>
           </div>
         </header>
@@ -299,7 +341,13 @@ function App() {
                 <h1 className="text-2xl font-bold text-gray-800">Roadmap Details</h1>
                 <p className="text-sm text-gray-600">Track your learning progress</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                {/* User Email Display */}
+                <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+                  <User className="h-4 w-4 text-gray-600" />
+                  <span className="text-sm text-gray-700">{user?.email}</span>
+                </div>
+
                 <button
                   onClick={handleBackToList}
                   className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -311,6 +359,16 @@ function App() {
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   Create New
+                </button>
+
+                {/* Logout Button */}
+                <button
+                  onClick={handleLogout}
+                  className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
+                  title="Logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span className="hidden sm:inline">Logout</span>
                 </button>
               </div>
             </div>
@@ -336,6 +394,12 @@ function App() {
               <p className="text-sm text-gray-600">Powered by OpenRouter AI</p>
             </div>
             <div className="flex items-center gap-2">
+              {/* User Email Display */}
+              <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+                <User className="h-4 w-4 text-gray-600" />
+                <span className="text-sm text-gray-700">{user?.email}</span>
+              </div>
+
               <button
                 onClick={handleViewMyRoadmaps}
                 className="px-4 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
@@ -351,6 +415,16 @@ function App() {
                   Start Over
                 </button>
               )}
+
+              {/* NEW: Logout Button */}
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
+                title="Logout"
+              >
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
             </div>
           </div>
 
@@ -542,7 +616,7 @@ function App() {
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="container mx-auto px-4 py-6 text-center text-gray-600 text-sm">
-          <p>© 2025 AI Career Roadmap Generator | Powered by OpenRouter AI</p>
+          <p>© 2024 AI Career Roadmap Generator | Powered by OpenRouter AI</p>
         </div>
       </footer>
     </div>
