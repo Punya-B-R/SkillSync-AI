@@ -3,9 +3,13 @@ import ResumeUpload from './components/ResumeUpload'
 import InterestSelector from './components/InterestSelector'
 import TimeCommitment from './components/TimeCommitment'
 import RoadmapDisplay from './components/RoadmapDisplay'
+import RoadmapList from './components/RoadmapList'
+import RoadmapDetail from './components/RoadmapDetail'
+import DebugRoadmapData from './components/DebugRoadmapData'
 import AIChat from './components/AIChat'
 import { generateRoadmap } from './services/api'
-import { Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { saveRoadmap } from './services/roadmapservice'
+import { Loader2, CheckCircle, AlertCircle, BookOpen } from 'lucide-react'
 import { onAuthStateChanged } from "firebase/auth"
 import { auth } from "./firebase"
 import Signup from "./Signup"
@@ -24,6 +28,12 @@ function App() {
   const [user, setUser] = useState(null)
   const [authChecked, setAuthChecked] = useState(false)
   const [showSignup, setShowSignup] = useState(false)
+  const [savingRoadmap, setSavingRoadmap] = useState(false)
+  const [currentRoadmapId, setCurrentRoadmapId] = useState(null)
+
+  // New state for navigation between views
+  const [view, setView] = useState('generator') // 'generator', 'list', 'detail'
+  const [selectedRoadmapId, setSelectedRoadmapId] = useState(null)
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
@@ -74,6 +84,134 @@ function App() {
     }
   }
 
+  const handleSaveRoadmap = async () => {
+    if (!user) {
+      setError('Please login to save your roadmap')
+      return
+    }
+
+    if (!roadmap) {
+      setError('No roadmap to save')
+      return
+    }
+
+    setSavingRoadmap(true)
+    setError(null)
+
+    try {
+      console.log('=== DEBUG: Saving Roadmap ===')
+      console.log('Profile:', profile)
+      console.log('Selected Tools:', selectedTools)
+      console.log('Preferences:', preferences)
+      console.log('Roadmap:', roadmap)
+
+      // Extract learning resources from phases if they exist
+      let learningResources = [];
+      if (roadmap.phases && Array.isArray(roadmap.phases)) {
+        learningResources = roadmap.phases.map(phase => ({
+          toolName: phase.title || 'Unknown',
+          phase_number: phase.phase_number,
+          duration_weeks: phase.duration_weeks,
+          learning_objectives: phase.learning_objectives || [],
+          milestones: phase.milestones || [],
+          tools_covered: phase.tools_covered || [],
+          resources: [] // You can map phase resources here if they exist
+        }));
+      } else if (roadmap.learning_resources) {
+        learningResources = roadmap.learning_resources;
+      } else if (roadmap.learningResources) {
+        learningResources = roadmap.learningResources;
+      }
+
+      // Structure the roadmap data for Firebase
+      const roadmapToSave = {
+        profileAnalysis: {
+          experienceLevel: profile?.experience_level || 'Junior',
+          yearsOfExperience: profile?.years_of_experience || 0,
+          technicalSkills: Array.isArray(profile?.technical_skills) ? profile.technical_skills : [],
+          topStrengths: Array.isArray(profile?.top_strengths) ? profile.top_strengths : [],
+          domainExpertise: Array.isArray(profile?.domain_expertise) ? profile.domain_expertise : []
+        },
+        selectedTools: Array.isArray(selectedTools) ? selectedTools.map(tool => ({
+          name: tool?.name || tool?.tool_name || 'Unknown Tool',
+          category: tool?.domain || tool?.category || 'General',
+          difficulty: tool?.difficulty || 'Moderate',
+          estimatedTime: tool?.learning_time_weeks ? `${tool.learning_time_weeks} weeks` : (tool?.estimated_time || tool?.estimatedTime || 'N/A'),
+          description: tool?.description || ''
+        })) : [],
+        learningPreferences: {
+          hoursPerWeek: preferences?.hoursPerWeek || 6,
+          learningStyle: preferences?.learningStyle || 'balanced',
+          deadline: preferences?.deadline || null,
+          hasDeadline: !!preferences?.deadline,
+          estimatedCompletion: preferences?.estimatedCompletion || roadmap?.estimated_completion_date || null,
+          totalWeeks: preferences?.totalWeeks || roadmap?.estimated_weeks || 10
+        },
+        learningPlan: {
+          totalTools: Array.isArray(selectedTools) ? selectedTools.length : 0,
+          estimatedWeeks: roadmap?.estimated_weeks || roadmap?.estimatedWeeks || preferences?.totalWeeks || 10,
+          hoursPerWeek: preferences?.hoursPerWeek || 6,
+          completionDate: preferences?.deadline || preferences?.estimatedCompletion || roadmap?.estimated_completion_date || null
+        },
+        learningResources: learningResources,
+        phases: roadmap?.phases || [],
+        projectIdeas: Array.isArray(roadmap?.project_ideas)
+          ? roadmap.project_ideas
+          : Array.isArray(roadmap?.projectIdeas)
+            ? roadmap.projectIdeas
+            : [],
+        careerInsights: roadmap?.career_insights || roadmap?.careerInsights || {},
+        skillGaps: {
+          yourStrengths: Array.isArray(profile?.technical_skills) ? profile.technical_skills : [],
+          skillsToDevelop: Array.isArray(selectedTools) ? selectedTools.map(t => t?.name || t?.tool_name || 'Unknown') : []
+        },
+        progress: 0,
+        completedTools: [],
+        completedPhases: [],
+        currentTool: Array.isArray(selectedTools) && selectedTools.length > 0
+          ? (selectedTools[0]?.name || selectedTools[0]?.tool_name || null)
+          : null
+      }
+
+      console.log('=== Structured Roadmap to Save ===')
+      console.log(JSON.stringify(roadmapToSave, null, 2))
+
+      const result = await saveRoadmap(user.uid, roadmapToSave)
+
+      if (result.success) {
+        setCurrentRoadmapId(result.roadmapId)
+        alert('🎉 Roadmap saved successfully!')
+        console.log('Roadmap saved with ID:', result.roadmapId)
+      } else {
+        throw new Error(result.error || 'Failed to save roadmap')
+      }
+    } catch (err) {
+      console.error('Error saving roadmap:', err)
+      setError(err.message || 'Failed to save roadmap. Please try again.')
+    } finally {
+      setSavingRoadmap(false)
+    }
+  }
+
+  const handleViewMyRoadmaps = () => {
+    setView('list')
+  }
+
+  const handleViewRoadmapDetail = (roadmapId) => {
+    setSelectedRoadmapId(roadmapId)
+    setView('detail')
+  }
+
+  const handleBackToGenerator = () => {
+    setView('generator')
+    setSelectedRoadmapId(null)
+  }
+
+  const handleBackToList = () => {
+    setView('list')
+    setSelectedRoadmapId(null)
+  }
+
   const handleBack = () => {
     if (step > 1) {
       setStep(step - 1)
@@ -89,6 +227,7 @@ function App() {
     setPreferences({})
     setRoadmap(null)
     setError(null)
+    setCurrentRoadmapId(null)
   }
 
   const steps = [
@@ -97,21 +236,95 @@ function App() {
     { number: 3, name: 'Set Preferences', icon: '⚙️' },
     { number: 4, name: 'View Roadmap', icon: '🗺️' },
   ]
+
   if (!authChecked) {
-    return <div className="text-center mt-20">Loading...</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 text-blue-600 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
   }
 
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        {step === 0 ? (
-          <Signup onSwitch={() => setStep(-1)} />
+        {showSignup ? (
+          <Signup onSwitch={() => setShowSignup(false)} />
         ) : (
-          <Login onSwitch={() => setStep(0)} />
+          <Login onSwitch={() => setShowSignup(true)} />
         )}
       </div>
-    );
+    )
   }
+
+  // Render RoadmapList view
+  if (view === 'list') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">My Learning Roadmaps</h1>
+                <p className="text-sm text-gray-600">Manage and track your learning journey</p>
+              </div>
+              <button
+                onClick={handleBackToGenerator}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Create New Roadmap
+              </button>
+            </div>
+          </div>
+        </header>
+        <RoadmapList
+          onViewDetail={handleViewRoadmapDetail}
+          onBackToGenerator={handleBackToGenerator}
+        />
+      </div>
+    )
+  }
+
+  // Render RoadmapDetail view
+  if (view === 'detail' && selectedRoadmapId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+          <div className="container mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Roadmap Details</h1>
+                <p className="text-sm text-gray-600">Track your learning progress</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleBackToList}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  ← Back to List
+                </button>
+                <button
+                  onClick={handleBackToGenerator}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Create New
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+        <RoadmapDetail
+          roadmapId={selectedRoadmapId}
+          onBack={handleBackToList}
+        />
+      </div>
+    )
+  }
+
+  // Render main generator view (default)
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       {/* Header */}
@@ -122,14 +335,23 @@ function App() {
               <h1 className="text-2xl font-bold text-gray-800">AI Career Roadmap Generator</h1>
               <p className="text-sm text-gray-600">Powered by OpenRouter AI</p>
             </div>
-            {step > 1 && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleStartOver}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                onClick={handleViewMyRoadmaps}
+                className="px-4 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
               >
-                Start Over
+                <BookOpen className="h-4 w-4" />
+                My Roadmaps
               </button>
-            )}
+              {step > 1 && (
+                <button
+                  onClick={handleStartOver}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Start Over
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Step Indicator */}
@@ -258,10 +480,42 @@ function App() {
             {step === 4 && roadmap && (
               <div className="space-y-6">
                 <RoadmapDisplay roadmap={roadmap} profile={profile} />
-                <div className="max-w-7xl mx-auto">
+                <div className="max-w-7xl mx-auto flex gap-4">
+                  <button
+                    onClick={handleSaveRoadmap}
+                    disabled={savingRoadmap || currentRoadmapId}
+                    className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {savingRoadmap ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Saving...
+                      </>
+                    ) : currentRoadmapId ? (
+                      <>
+                        <CheckCircle className="h-5 w-5" />
+                        Saved
+                      </>
+                    ) : (
+                      <>
+                        <BookOpen className="h-5 w-5" />
+                        Save Roadmap
+                      </>
+                    )}
+                  </button>
+
+                  {currentRoadmapId && (
+                    <button
+                      onClick={handleViewMyRoadmaps}
+                      className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      View My Roadmaps
+                    </button>
+                  )}
+
                   <button
                     onClick={handleStartOver}
-                    className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                    className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                   >
                     Generate New Roadmap
                   </button>
@@ -274,6 +528,16 @@ function App() {
 
       {/* AI Chat - Available after step 2 */}
       {step >= 2 && <AIChat roadmap={roadmap} profile={profile} />}
+
+      {/* Debug Component - Remove in production */}
+      {step === 4 && roadmap && (
+        <DebugRoadmapData
+          profile={profile}
+          selectedTools={selectedTools}
+          preferences={preferences}
+          roadmap={roadmap}
+        />
+      )}
 
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-12">
