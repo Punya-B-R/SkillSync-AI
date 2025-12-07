@@ -1,4 +1,4 @@
-# AI-Powered Career Roadmap Generator
+# SkillSync - AI-Powered Career Roadmap Generator
 
 A full-stack application that generates personalized career roadmaps using AI (OpenRouter with Llama 3.3 70B).
 
