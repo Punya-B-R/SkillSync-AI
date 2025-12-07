@@ -1,5 +1,28 @@
 import { useState } from 'react'
-import { CheckCircle, Circle, ChevronDown, ChevronRight, Calendar, Clock, BookOpen, Code, Target, Download, Copy, Share2, ExternalLink, AlertCircle, Check, Dumbbell, BookOpen as BookOpenIcon } from 'lucide-react'
+import { 
+  CheckCircle, 
+  Circle, 
+  ChevronDown, 
+  ChevronUp,
+  ChevronRight, 
+  Calendar, 
+  Clock, 
+  BookOpen, 
+  Code, 
+  Target, 
+  Download, 
+  Copy, 
+  Share2, 
+  ExternalLink, 
+  AlertCircle, 
+  Check, 
+  Dumbbell, 
+  BookOpen as BookOpenIcon,
+  Lightbulb as LightbulbIcon,
+  Sparkles as SparklesIcon,
+  Star as StarIcon,
+  Rocket as RocketIcon
+} from 'lucide-react'
 
 function RoadmapDisplay({ roadmap, profile }) {
   const [expandedPhases, setExpandedPhases] = useState({})
@@ -342,80 +365,23 @@ function RoadmapDisplay({ roadmap, profile }) {
       {/* Project Ideas */}
       {roadmap.projects && roadmap.projects.length > 0 && (
         <div className="bg-white rounded-xl shadow-xl p-8">
-          <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <Code className="h-6 w-6 text-blue-600" />
-            Project Ideas
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="mb-6">
+            <h3 className="text-2xl font-bold text-gray-800 mb-2 flex items-center gap-2">
+              <Code className="h-6 w-6 text-blue-600" />
+              Portfolio Projects
+            </h3>
+            <p className="text-gray-600">
+              Build these projects to apply your learning and create portfolio pieces
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {roadmap.projects.map((project, index) => (
-              <div key={index} className="border-2 border-gray-200 rounded-xl p-6 hover:border-blue-400 transition-all">
-                <div className="flex items-start justify-between mb-4">
-                  <h4 className="text-xl font-bold text-gray-800">{project.title}</h4>
-                  <button
-                    onClick={() => toggleProject(index)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    {expandedProjects[index] ? (
-                      <ChevronDown className="h-5 w-5" />
-                    ) : (
-                      <ChevronRight className="h-5 w-5" />
-                    )}
-                  </button>
-                </div>
-                <p className="text-gray-600 mb-4">{project.description}</p>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {project.technologies?.map((tech, i) => (
-                    <span key={i} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
-                      {tech}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex items-center gap-4 text-sm text-gray-600 mb-4">
-                  <span className={`px-2 py-1 rounded ${
-                    project.difficulty === 'Beginner' ? 'bg-green-100 text-green-800' :
-                    project.difficulty === 'Intermediate' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
-                  }`}>
-                    {project.difficulty || project.complexity}
-                  </span>
-                  {project.estimated_hours && (
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-4 w-4" />
-                      {project.estimated_hours}h
-                    </span>
-                  )}
-                  {project.start_week && (
-                    <span className="flex items-center gap-1 text-blue-600">
-                      <Calendar className="h-4 w-4" />
-                      Start Week {project.start_week}
-                    </span>
-                  )}
-                </div>
-                {expandedProjects[index] && (
-                  <div className="mt-4 space-y-3">
-                    {project.learning_outcomes && (
-                      <div>
-                        <h5 className="font-semibold text-gray-700 mb-2">Learning Outcomes</h5>
-                        <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
-                          {project.learning_outcomes.map((outcome, i) => (
-                            <li key={i}>{outcome}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {project.steps && (
-                      <div>
-                        <h5 className="font-semibold text-gray-700 mb-2">Step-by-Step Guide</h5>
-                        <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
-                          {project.steps.map((step, i) => (
-                            <li key={i}>{step}</li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              <ProjectCard
+                key={index}
+                project={project}
+                isExpanded={expandedProjects[index]}
+                onToggle={() => toggleProject(index)}
+              />
             ))}
           </div>
         </div>
@@ -492,6 +458,153 @@ function RoadmapDisplay({ roadmap, profile }) {
   )
 }
 
+// ProjectCard Component
+function ProjectCard({ project, isExpanded, onToggle }) {
+  return (
+    <div className="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200 hover:shadow-xl transition-shadow">
+      {/* Project Header */}
+      <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-6 text-white">
+        <div className="flex justify-between items-start mb-2">
+          <h3 className="text-xl font-bold">{project.title}</h3>
+          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+            project.difficulty === 'Beginner' ? 'bg-green-400' :
+            project.difficulty === 'Intermediate' ? 'bg-yellow-400' :
+            'bg-red-400'
+          }`}>
+            {project.difficulty}
+          </span>
+        </div>
+        <div className="flex items-center gap-4 text-sm">
+          <span className="flex items-center gap-1">
+            <Clock className="w-4 h-4" />
+            {project.estimated_hours}h
+          </span>
+          <span className="flex items-center gap-1">
+            <Calendar className="w-4 h-4" />
+            Week {project.start_week}
+          </span>
+        </div>
+      </div>
+      
+      {/* Problem Statement - PROMINENT DISPLAY */}
+      <div className="p-6">
+        <div className="mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <LightbulbIcon className="w-5 h-5 text-yellow-500" />
+            <h4 className="font-semibold text-lg">Problem Statement</h4>
+          </div>
+          <p className="text-gray-700 leading-relaxed bg-yellow-50 p-4 rounded-md border-l-4 border-yellow-400">
+            {project.problem_statement || project.description || 'No problem statement provided.'}
+          </p>
+        </div>
+        
+        {/* Technologies */}
+        <div className="mb-4">
+          <h4 className="font-semibold mb-2 text-sm text-gray-600">Technologies:</h4>
+          <div className="flex flex-wrap gap-2">
+            {project.technologies?.map((tech, i) => (
+              <span key={i} className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                {tech}
+              </span>
+            ))}
+          </div>
+        </div>
+        
+        {/* Learning Outcomes */}
+        <div className="mb-4">
+          <h4 className="font-semibold mb-2 text-sm text-gray-600">What you'll learn:</h4>
+          <ul className="space-y-1">
+            {project.learning_outcomes?.slice(0, 2).map((outcome, i) => (
+              <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
+                <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                <span>{outcome}</span>
+              </li>
+            ))}
+            {project.learning_outcomes && project.learning_outcomes.length > 2 && !isExpanded && (
+              <li className="text-sm text-blue-600">
+                +{project.learning_outcomes.length - 2} more outcomes
+              </li>
+            )}
+            {isExpanded && project.learning_outcomes?.slice(2).map((outcome, i) => (
+              <li key={i+2} className="text-sm text-gray-700 flex items-start gap-2">
+                <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                <span>{outcome}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        
+        {/* Expand/Collapse Button */}
+        <button
+          onClick={onToggle}
+          className="w-full py-2 px-4 bg-gray-100 hover:bg-gray-200 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2"
+        >
+          {isExpanded ? (
+            <>
+              <ChevronUp className="w-4 h-4" />
+              Show Less
+            </>
+          ) : (
+            <>
+              <ChevronDown className="w-4 h-4" />
+              View Implementation Steps
+            </>
+          )}
+        </button>
+        
+        {/* Expanded Content */}
+        {isExpanded && (
+          <div className="mt-4 space-y-4 border-t pt-4">
+            {/* Implementation Steps */}
+            {project.steps && project.steps.length > 0 && (
+              <div>
+                <h4 className="font-semibold mb-3 flex items-center gap-2">
+                  <Code className="w-5 h-5 text-blue-600" />
+                  Implementation Steps
+                </h4>
+                <ol className="space-y-3">
+                  {project.steps.map((step, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">
+                        {i + 1}
+                      </span>
+                      <span className="text-sm text-gray-700 pt-0.5">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+            
+            {/* Bonus Features */}
+            {project.bonus_features && project.bonus_features.length > 0 && (
+              <div>
+                <h4 className="font-semibold mb-2 flex items-center gap-2">
+                  <SparklesIcon className="w-5 h-5 text-purple-600" />
+                  Bonus Features
+                </h4>
+                <ul className="space-y-2">
+                  {project.bonus_features.map((feature, i) => (
+                    <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
+                      <StarIcon className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {/* Action Button */}
+            <button className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-md font-semibold hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-2">
+              <RocketIcon className="w-5 h-5" />
+              Start Building in Week {project.start_week}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // DayCard Component
 function DayCard({ day, weekNumber, isCompleted, onToggleComplete }) {
   // Color coding based on day of week
@@ -561,27 +674,46 @@ function DayCard({ day, weekNumber, isCompleted, onToggleComplete }) {
         </div>
       )}
 
-      {/* Resource Section */}
+      {/* Resource Section - Updated */}
       {day.resource && (
         <div className="bg-blue-50 rounded-md p-4 my-4 border-l-4 border-blue-500">
           <p className="text-sm font-semibold mb-2 text-gray-700 flex items-center gap-2">
             <BookOpenIcon className="h-4 w-4 text-blue-600" />
-            Learning Resource:
+            📚 Learning Resource
           </p>
           <div className="space-y-2">
             <div className="flex gap-2 flex-wrap">
-              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
+              {/* Resource Type Badge */}
+              <span className={`text-xs px-2 py-1 rounded font-medium ${
+                day.resource.type === 'Interactive Course' ? 'bg-purple-100 text-purple-700' :
+                day.resource.type === 'Documentation' ? 'bg-blue-100 text-blue-700' :
+                day.resource.type === 'Tutorial Article' ? 'bg-green-100 text-green-700' :
+                day.resource.type === 'Interactive Platform' ? 'bg-indigo-100 text-indigo-700' :
+                day.resource.type === 'GitHub Tutorial' ? 'bg-gray-100 text-gray-700' :
+                day.resource.type === 'Free Guide' ? 'bg-orange-100 text-orange-700' :
+                'bg-blue-100 text-blue-700'
+              }`}>
                 {day.resource.type || 'Resource'}
               </span>
+              
+              {/* Platform Badge */}
               {day.resource.platform && (
                 <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded">
                   {day.resource.platform}
                 </span>
               )}
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-medium">
+              
+              {/* FREE Badge */}
+              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded font-semibold">
                 ✓ FREE
               </span>
+              
+              {/* NO VIDEO Badge - to emphasize it's not a video */}
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                📖 Text/Interactive
+              </span>
             </div>
+            
             {day.resource.title && (
               <p className="font-medium text-gray-800">{day.resource.title}</p>
             )}
@@ -591,7 +723,7 @@ function DayCard({ day, weekNumber, isCompleted, onToggleComplete }) {
             {day.resource.duration && (
               <p className="text-xs text-gray-500 flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                {day.resource.duration}
+                ⏱️ {day.resource.duration}
               </p>
             )}
             {day.resource.url && (
@@ -601,6 +733,7 @@ function DayCard({ day, weekNumber, isCompleted, onToggleComplete }) {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium mt-2"
               >
+                <BookOpenIcon className="w-4 h-4" />
                 Access Resource
                 <ExternalLink className="w-4 h-4" />
               </a>

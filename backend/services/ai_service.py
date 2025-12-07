@@ -446,11 +446,31 @@ Return ONLY valid JSON:
                                             if not url.startswith(('http://', 'https://')):
                                                 errors.append(f"Week {week_plan.get('week', week_idx + 1)}, Day {daily_plan.get('day', day_idx + 1)}: Invalid URL format (must start with http:// or https://): {url[:50]}")
                                         
-                                        # Validate resource type
-                                        valid_types = ['YouTube Video', 'Free Course', 'Documentation', 'Article', 'Tutorial']
+                                        # Validate resource type (YouTube videos are not allowed)
+                                        valid_types = ['Interactive Course', 'Documentation', 'Tutorial Article', 'Interactive Platform', 'GitHub Tutorial', 'Free Guide']
                                         resource_type = resource.get('type', '')
                                         if resource_type and resource_type not in valid_types:
                                             errors.append(f"Week {week_plan.get('week', week_idx + 1)}, Day {daily_plan.get('day', day_idx + 1)}: Invalid resource type '{resource_type}'. Must be one of {valid_types}")
+                                        
+                                        # Check for YouTube URLs and reject them
+                                        url = resource.get('url', '')
+                                        if url and isinstance(url, str):
+                                            url_lower = url.lower()
+                                            if 'youtube.com' in url_lower or 'youtu.be' in url_lower:
+                                                errors.append(f"Week {week_plan.get('week', week_idx + 1)}, Day {daily_plan.get('day', day_idx + 1)}: YouTube videos are not allowed. Found YouTube URL: {url[:50]}")
+                                        
+                                        # Check for YouTube in platform field
+                                        platform = resource.get('platform', '')
+                                        if platform and isinstance(platform, str):
+                                            platform_lower = platform.lower()
+                                            if 'youtube' in platform_lower:
+                                                errors.append(f"Week {week_plan.get('week', week_idx + 1)}, Day {daily_plan.get('day', day_idx + 1)}: YouTube videos are not allowed. Found YouTube platform: {platform}")
+                                        
+                                        # Check for video content in type
+                                        if resource_type and isinstance(resource_type, str):
+                                            resource_type_lower = resource_type.lower()
+                                            if 'video' in resource_type_lower and 'interactive' not in resource_type_lower:
+                                                errors.append(f"Week {week_plan.get('week', week_idx + 1)}, Day {daily_plan.get('day', day_idx + 1)}: Video resources are not allowed. Found video type: {resource_type}")
                                 
                                 # Validate hours allocation
                                 hours = daily_plan.get('hours')
@@ -482,11 +502,27 @@ Return ONLY valid JSON:
                         errors.append(f"Project {proj_idx + 1}: must be a dictionary")
                         continue
                     
-                    project_required = ['title', 'description', 'technologies', 'difficulty', 
-                                       'estimated_hours', 'learning_outcomes', 'steps', 'start_week']
+                    project_required = ['title', 'problem_statement', 'technologies', 'difficulty', 
+                                       'estimated_hours', 'learning_outcomes', 'steps', 'start_week', 'bonus_features']
                     for field in project_required:
                         if field not in project:
                             errors.append(f"Project {proj_idx + 1}: Missing field '{field}'")
+                    
+                    # Validate problem_statement is detailed enough
+                    if 'problem_statement' in project:
+                        problem_stmt = project.get('problem_statement', '')
+                        if not problem_stmt or not isinstance(problem_stmt, str):
+                            errors.append(f"Project {proj_idx + 1}: problem_statement is missing or empty")
+                        elif len(problem_stmt.strip()) < 100:
+                            errors.append(f"Project {proj_idx + 1}: problem_statement too short (should be 3-5 sentences, at least 100 characters)")
+                    
+                    # Validate bonus_features
+                    if 'bonus_features' in project:
+                        bonus_features = project.get('bonus_features', [])
+                        if not isinstance(bonus_features, list):
+                            errors.append(f"Project {proj_idx + 1}: bonus_features must be a list")
+                        elif len(bonus_features) < 2:
+                            errors.append(f"Project {proj_idx + 1}: bonus_features should have at least 2 items")
         
         # Validate skill_gap_analysis structure
         if 'skill_gap_analysis' in roadmap:
@@ -551,9 +587,30 @@ Return ONLY valid JSON:
                 if len(week['daily_plans']) != 7:
                     errors.append(f"Week {week_num}: Expected 7 days, got {len(week['daily_plans'])}")
             
+            # Validate high-level weeks (key_resource)
+            if is_high_level and 'key_resource' in week:
+                key_resource = week['key_resource']
+                if not isinstance(key_resource, dict):
+                    errors.append(f"Week {week_num}: key_resource must be a dictionary")
+                else:
+                    # Check for YouTube URLs and reject them
+                    if 'url' in key_resource:
+                        url = key_resource.get('url', '')
+                        if url and isinstance(url, str):
+                            url_lower = url.lower()
+                            if 'youtube.com' in url_lower or 'youtu.be' in url_lower:
+                                errors.append(f"Week {week_num}: YouTube videos are not allowed in key_resource. Found YouTube URL: {url[:50]}")
+                    
+                    # Check resource type
+                    resource_type = key_resource.get('type', '')
+                    if resource_type and isinstance(resource_type, str):
+                        resource_type_lower = resource_type.lower()
+                        if 'youtube' in resource_type_lower or ('video' in resource_type_lower and 'interactive' not in resource_type_lower):
+                            errors.append(f"Week {week_num}: YouTube/video resources are not allowed in key_resource. Found type: {resource_type}")
+            
             # Validate each day (only for detailed weeks)
             if not has_daily_plans:
-                # Skip day validation for high-level weeks
+                # Skip day validation for high-level weeks (already validated key_resource above)
                 continue
                 
             for day in week['daily_plans']:
@@ -589,10 +646,124 @@ Return ONLY valid JSON:
                         url = url.strip()
                         if not url.startswith(('http://', 'https://')):
                             errors.append(f"Week {week_num}, Day {day_num}: Invalid URL format (must start with http:// or https://): {url[:50]}")
+                        else:
+                            # Check for YouTube URLs and reject them
+                            url_lower = url.lower()
+                            if 'youtube.com' in url_lower or 'youtu.be' in url_lower:
+                                errors.append(f"Week {week_num}, Day {day_num}: YouTube videos are not allowed. Found YouTube URL: {url[:50]}")
                     else:
                         errors.append(f"Week {week_num}, Day {day_num}: URL must be a string")
+                
+                # Check for YouTube in platform field
+                if 'platform' in resource and resource['platform']:
+                    platform = resource.get('platform', '')
+                    if isinstance(platform, str):
+                        platform_lower = platform.lower()
+                        if 'youtube' in platform_lower:
+                            errors.append(f"Week {week_num}, Day {day_num}: YouTube videos are not allowed. Found YouTube platform: {platform}")
+                
+                # Validate resource type
+                resource_type = resource.get('type', '')
+                if resource_type:
+                    allowed_types = ['Interactive Course', 'Documentation', 'Tutorial Article', 'Interactive Platform', 'GitHub Tutorial', 'Free Guide']
+                    if resource_type not in allowed_types:
+                        errors.append(f"Week {week_num}, Day {day_num}: Invalid resource type '{resource_type}'. Must be one of {allowed_types}")
+                    elif isinstance(resource_type, str):
+                        resource_type_lower = resource_type.lower()
+                        if 'video' in resource_type_lower and 'interactive' not in resource_type_lower:
+                            errors.append(f"Week {week_num}, Day {day_num}: Video resources are not allowed. Found video type: {resource_type}")
+        
+        # Validate projects have problem statements
+        if 'projects' in roadmap_data:
+            projects = roadmap_data['projects']
+            if isinstance(projects, list):
+                for i, project in enumerate(projects):
+                    if not isinstance(project, dict):
+                        continue
+                    
+                    if 'problem_statement' not in project or not project.get('problem_statement'):
+                        errors.append(f"Project {i+1}: Missing problem_statement")
+                    elif len(project.get('problem_statement', '').strip()) < 100:
+                        errors.append(f"Project {i+1}: Problem statement too short (should be 3-5 sentences, at least 100 characters)")
+                    
+                    if 'bonus_features' not in project:
+                        errors.append(f"Project {i+1}: Missing bonus_features")
+                    elif not isinstance(project.get('bonus_features'), list) or len(project.get('bonus_features', [])) < 2:
+                        errors.append(f"Project {i+1}: bonus_features should be a list with at least 2 items")
         
         return len(errors) == 0, errors
+    
+    def _filter_youtube_resources(self, roadmap: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Filter out any YouTube resources from the roadmap as a safety measure.
+        
+        Args:
+            roadmap: Roadmap dictionary
+            
+        Returns:
+            dict: Roadmap with YouTube resources removed or replaced
+        """
+        if 'weekly_plans' not in roadmap:
+            return roadmap
+        
+        for week in roadmap.get('weekly_plans', []):
+            # Check detailed weeks (daily_plans)
+            if 'daily_plans' in week:
+                for day in week.get('daily_plans', []):
+                    if 'resource' in day:
+                        resource = day['resource']
+                        url = resource.get('url', '')
+                        platform = resource.get('platform', '')
+                        resource_type = resource.get('type', '')
+                        
+                        # Check if it's a YouTube resource
+                        is_youtube = False
+                        if url and isinstance(url, str):
+                            url_lower = url.lower()
+                            if 'youtube.com' in url_lower or 'youtu.be' in url_lower:
+                                is_youtube = True
+                        if platform and isinstance(platform, str) and 'youtube' in platform.lower():
+                            is_youtube = True
+                        if resource_type and isinstance(resource_type, str) and ('youtube' in resource_type.lower() or 'video' in resource_type.lower()):
+                            is_youtube = True
+                        
+                        if is_youtube:
+                            logger.warning(f"Removing YouTube resource from Week {week.get('week', '?')}, Day {day.get('day', '?')}")
+                            # Replace with a placeholder that indicates resource needs to be replaced
+                            day['resource'] = {
+                                'title': 'Resource needs to be replaced (YouTube not allowed)',
+                                'type': 'Documentation',
+                                'platform': 'Official Documentation',
+                                'url': 'https://example.com',
+                                'what_to_learn': 'Please use official documentation or tutorials instead',
+                                'duration': 'N/A'
+                            }
+            
+            # Check high-level weeks (key_resource)
+            if 'key_resource' in week:
+                resource = week['key_resource']
+                url = resource.get('url', '')
+                resource_type = resource.get('type', '')
+                
+                # Check if it's a YouTube resource
+                is_youtube = False
+                if url and isinstance(url, str):
+                    url_lower = url.lower()
+                    if 'youtube.com' in url_lower or 'youtu.be' in url_lower:
+                        is_youtube = True
+                if resource_type and isinstance(resource_type, str) and ('youtube' in resource_type.lower() or 'video' in resource_type.lower()):
+                    is_youtube = True
+                
+                if is_youtube:
+                    logger.warning(f"Removing YouTube resource from Week {week.get('week', '?')} key_resource")
+                    # Replace with a placeholder
+                    week['key_resource'] = {
+                        'title': 'Resource needs to be replaced (YouTube not allowed)',
+                        'url': 'https://example.com',
+                        'type': 'Documentation'
+                    }
+        
+        return roadmap
     
     def _calculate_total_weeks(self, user_data: Dict[str, Any]) -> int:
         """
@@ -624,11 +795,22 @@ Return ONLY valid JSON:
         Generate personalized learning roadmap with detailed daily plans for first 4 weeks only.
         This significantly reduces generation time while giving users immediate actionable content.
         
+        Roadmap includes:
+        - NO YouTube videos (only interactive courses, documentation, articles, tutorials)
+        - Projects with detailed problem statements explaining the "why"
+        - Bonus features for each project
+        
         Args:
-            user_data: Dict containing profile, selected_tools, hours_per_week, learning_style, deadline
+            user_data: Dict containing:
+            - profile: User profile with skills, experience level, etc.
+            - selected_tools: List of tools/technologies to learn
+            - hours_per_week: Hours per week for learning
+            - learning_style: Learning style preference
+            - deadline: Optional deadline
             
         Returns:
-            dict: Complete roadmap with phases, detailed weekly plans (first 4 weeks), high-level overview for rest
+            dict: Complete roadmap with phases, detailed weekly plans (first 4 weeks), high-level overview for rest,
+                  projects with problem statements, career insights, and skill gap analysis
         """
         try:
             logger.info("Starting optimized roadmap generation")
@@ -657,7 +839,7 @@ Return ONLY valid JSON:
             total_weeks = self._calculate_total_weeks(user_data)
             detailed_weeks = min(4, total_weeks)
             
-            # Compressed, optimized prompt
+            # Detailed prompt with YouTube exclusion and problem statements
             skills_str = ', '.join(profile.get('skills', [])[:10])  # Limit to top 10
             tools_str = ', '.join(selected_tools)
             
@@ -669,31 +851,162 @@ Time: {hours_per_week}h/week
 Style: {learning_style}
 
 Generate JSON roadmap:
-- 3-4 phases (phase, title, duration_weeks, tools, objectives, milestones)
-- DETAILED daily plans for FIRST {detailed_weeks} WEEKS ONLY (7 days each)
-  Each day: topic, 3 tasks, hours, resource (title, type, platform, url, what_to_learn, duration), practice, outcome
-- High-level overview for weeks {detailed_weeks + 1}+ (week, phase, focus, main_topics: [], total_hours, key_resource: {{title, url, type}})
-- 3 project ideas (title, description, technologies, difficulty, estimated_hours, learning_outcomes, steps: 5 max, start_week)
-- Career insights (4 sentences max)
-- Skill gaps (strengths: 3, gaps: 3, challenges: 2, strategies: 3)
 
-Requirements:
-- Only FREE resources with real URLs (http:// or https://)
-- Concise but actionable
-- Valid JSON only
+1. 3-4 phases with objectives
 
-JSON structure:
+2. Detailed daily plans for FIRST {detailed_weeks} WEEKS ONLY (7 days each):
+   Each day needs:
+   - Day number (1-7)
+   - Topic (what to learn today)
+   - Tasks (3-4 specific learning tasks)
+   - Hours (time allocation)
+   - ONE FREE resource (CRITICAL: NO YOUTUBE VIDEOS):
+     * Allowed resource types ONLY:
+       - Interactive Course (freeCodeCamp, Codecademy free tier, Scrimba free)
+       - Official Documentation (language/framework docs)
+       - Tutorial Article (Dev.to, Medium, Real Python, DigitalOcean)
+       - Interactive Platform (MDN Web Docs, W3Schools, GeeksforGeeks)
+       - GitHub Tutorial (repo with step-by-step guide)
+       - Free eBook/Guide (official guides, free programming books)
+     * Must include: title, type, platform, url, what_to_learn, duration
+     * Must be FREE and accessible without signup (or free signup only)
+   - Practice exercise
+   - Expected outcome
+
+3. High-level overview for remaining weeks:
+   - Focus, main topics, hours, 1 key resource (NO YouTube)
+
+4. PROJECT IDEAS (3 projects):
+   Each project MUST include:
+   - Title (clear, specific project name)
+   - Problem Statement (detailed description of what problem this project solves and why it matters)
+     * Should be 3-5 sentences explaining:
+       - What real-world problem does this address?
+       - Who would use this?
+       - What value does it provide?
+       - Why is this a good learning project?
+   - Technologies (specific tools from their selected list)
+   - Difficulty (Beginner/Intermediate/Advanced)
+   - Estimated hours (realistic time estimate)
+   - Learning outcomes (what skills they'll gain - 3-4 items)
+   - Implementation steps (5-7 detailed steps to build it)
+   - Start week (which week to begin this project)
+   - Bonus features (2-3 optional features to add after core is complete)
+
+5. Career insights (4 sentences max)
+
+6. Skill gap analysis (3 strengths, 3 gaps, 2 challenges, 3 strategies)
+
+CRITICAL REQUIREMENTS:
+- ABSOLUTELY NO YOUTUBE VIDEOS OR VIDEO CONTENT
+- Only interactive courses, documentation, articles, tutorials
+- All resources must be FREE
+- Real, working URLs
+- Projects must have detailed problem statements explaining the "why"
+- Projects should be portfolio-worthy
+
+RESOURCE EXAMPLES (Use similar FREE resources):
+- freeCodeCamp interactive courses
+- Official docs: docs.soliditylang.org, reactjs.org/docs
+- MDN Web Docs tutorials
+- Dev.to articles and series
+- DigitalOcean tutorials
+- Real Python articles (free tier)
+- W3Schools interactive tutorials
+- GeeksforGeeks tutorials
+- GitHub repos with learning guides
+- Free programming books (github.com/EbookFoundation/free-programming-books)
+
+PROJECT PROBLEM STATEMENT EXAMPLE:
+{{
+  "title": "Decentralized Task Marketplace",
+  "problem_statement": "Freelance platforms charge high fees (20-30%) and have centralized control over payments, leading to delayed payouts and disputes. This project creates a blockchain-based task marketplace where clients and freelancers interact directly through smart contracts, ensuring automatic payment release upon task completion and reducing fees to near-zero. This is valuable for learning how to build real-world dApps that solve trust issues in peer-to-peer transactions. It demonstrates practical use of smart contracts, IPFS for file storage, and Web3 wallet integration.",
+  "technologies": ["Solidity", "Ethers.js", "React", "IPFS"],
+  "difficulty": "Intermediate",
+  "estimated_hours": 40,
+  "learning_outcomes": [
+    "Build and deploy smart contracts with escrow logic",
+    "Integrate Web3 wallets (MetaMask) with React frontend",
+    "Store and retrieve files using IPFS",
+    "Handle blockchain transactions and events"
+  ],
+  "steps": [
+    "Design smart contract architecture for task creation, bidding, and escrow",
+    "Write and test Solidity contracts with dispute resolution mechanism",
+    "Build React frontend with wallet connection and task listing UI",
+    "Integrate IPFS for storing task descriptions and deliverables",
+    "Implement task lifecycle: creation, bidding, acceptance, completion, payment",
+    "Add event listeners for blockchain events and update UI in real-time",
+    "Deploy to testnet and conduct end-to-end testing"
+  ],
+  "start_week": 6,
+  "bonus_features": [
+    "Reputation system based on completed tasks",
+    "Multi-signature escrow for high-value tasks",
+    "Search and filter functionality with tags"
+  ]
+}}
+
+Return ONLY valid JSON:
 {{
   "total_duration_weeks": {total_weeks},
   "estimated_completion_date": "YYYY-MM-DD",
   "phases": [{{"phase": n, "title": str, "duration_weeks": n, "tools": [], "objectives": [], "milestones": []}}],
   "weekly_plans": [
-    {{"week": 1-{detailed_weeks}, "phase": n, "focus": str, "objectives": [], "prerequisites": [], "daily_plans": [{{"day": 1-7, "topic": str, "tasks": [], "hours": n, "resource": {{"title": str, "type": str, "platform": str, "url": str, "what_to_learn": str, "duration": str}}, "practice": str, "outcome": str}}]}},
-    {{"week": {detailed_weeks + 1}+, "phase": n, "focus": str, "main_topics": [], "total_hours": n, "key_resource": {{"title": str, "url": str, "type": str}}}}
+    {{
+      "week": 1-{detailed_weeks},
+      "phase": n,
+      "focus": str,
+      "objectives": [],
+      "prerequisites": [],
+      "daily_plans": [
+        {{
+          "day": 1-7,
+          "topic": str,
+          "tasks": [],
+          "hours": n,
+          "resource": {{
+            "title": str,
+            "type": "Interactive Course|Documentation|Tutorial Article|Interactive Platform|GitHub Tutorial|Free Guide",
+            "platform": str,
+            "url": str,
+            "what_to_learn": str,
+            "duration": str
+          }},
+          "practice": str,
+          "outcome": str
+        }}
+      ]
+    }},
+    {{
+      "week": {detailed_weeks + 1}+,
+      "phase": n,
+      "focus": str,
+      "main_topics": [],
+      "total_hours": n,
+      "key_resource": {{"title": str, "url": str, "type": str}}
+    }}
   ],
-  "projects": [{{"title": str, "description": str, "technologies": [], "difficulty": str, "estimated_hours": n, "learning_outcomes": [], "steps": [], "start_week": n}}],
+  "projects": [
+    {{
+      "title": str,
+      "problem_statement": str,
+      "technologies": [],
+      "difficulty": str,
+      "estimated_hours": n,
+      "learning_outcomes": [],
+      "steps": [],
+      "start_week": n,
+      "bonus_features": []
+    }}
+  ],
   "career_insights": str,
-  "skill_gap_analysis": {{"strengths": [], "gaps": [], "challenges": [], "strategies": []}}
+  "skill_gap_analysis": {{
+    "strengths": [],
+    "gaps": [],
+    "challenges": [],
+    "strategies": []
+  }}
 }}"""
             
             # First attempt with extended timeout for roadmap generation (15 minutes)
@@ -707,7 +1020,7 @@ JSON structure:
                 logger.info("Retrying roadmap generation with stricter prompt")
                 
                 # Retry with stricter prompt and extended timeout (15 minutes)
-                stricter_prompt = prompt + "\n\nIMPORTANT: Ensure every daily_plan has a complete resource object with url field. All 7 days must be present for each week. Verify all resource URLs are real and accessible. All URLs must start with http:// or https://."
+                stricter_prompt = prompt + "\n\nIMPORTANT: Ensure every daily_plan has a complete resource object with url field. All 7 days must be present for each week. Verify all resource URLs are real and accessible. All URLs must start with http:// or https://. DO NOT include any YouTube videos or YouTube links - use documentation, articles, tutorials, or free courses instead. All projects must include detailed problem_statement and bonus_features fields."
                 
                 response_text = self._call_openrouter_api(stricter_prompt, timeout=900.0, max_tokens=10000)
                 result = self._extract_json_from_response(response_text)
@@ -726,6 +1039,9 @@ JSON structure:
                 # Don't retry again if structure is valid but other validations fail
                 # Log as warning but don't fail - structure is most important
                 logger.warning("Roadmap structure is valid but some fields may be missing or incorrect")
+            
+            # Filter out any YouTube resources that might have slipped through
+            result = self._filter_youtube_resources(result)
             
             # Cache result
             self._cache_response(cache_key, result)
