@@ -1,5 +1,7 @@
 # AI-Powered Career Roadmap Generator
 
+🌐 **Live Demo:** [https://skillsync-ai-2-w9jj.onrender.com/](https://skillsync-ai-2-w9jj.onrender.com/)
+
 A full-stack application that generates personalized career roadmaps using AI (OpenRouter with Llama 3.3 70B).
 
 ## Tech Stack
