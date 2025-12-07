@@ -19,16 +19,23 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configure CORS for frontend
+allowed_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+]
+
+# Add production frontend URL from environment
+frontend_url = os.getenv('FRONTEND_URL')
+if frontend_url:
+    allowed_origins.append(frontend_url)
+
 CORS(app, resources={
     r"/api/*": {
-        "origins": [
-            "http://localhost:5173",
-            "http://localhost:3000",
-            "http://localhost:3001",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:3000",
-            "http://127.0.0.1:3001",
-        ],
+        "origins": allowed_origins,
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
