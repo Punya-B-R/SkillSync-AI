@@ -1,0 +1,54 @@
+# Render ignore file
+# Files and directories to exclude from deployment
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build artifacts (will be generated during build)
+frontend/dist/
+backend/__pycache__/
+
+# Test files
+*.test.js
+*.test.py
+tests/
+__tests__/
+
+# Documentation
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+
