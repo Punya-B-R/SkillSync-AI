@@ -6,9 +6,15 @@ import json
 import logging
 import time
 import hashlib
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from dotenv import load_dotenv
 from openai import OpenAI
+from data.verified_resources import (
+    VERIFIED_RESOURCES,
+    TECH_TO_CATEGORY,
+    get_resources_for_tech,
+    get_all_resources_for_techs
+)
 
 load_dotenv()
 
@@ -539,18 +545,25 @@ Return ONLY valid JSON:
         
         return errors
     
-    def validate_roadmap_structure(self, roadmap_data: Dict[str, Any]) -> Tuple[bool, list]:
+    def validate_roadmap_structure(self, roadmap_data: Dict[str, Any], verified_resources: Optional[List[Dict[str, Any]]] = None) -> Tuple[bool, list]:
         """
         Validate that roadmap has correct structure with daily plans and resources.
+        Also validates that all URLs are from verified resources list.
         Standalone validation function that can be used independently.
         
         Args:
             roadmap_data: Roadmap dictionary to validate
+            verified_resources: Optional list of verified resources to validate URLs against
             
         Returns:
             tuple: (is_valid: bool, errors: list of error messages)
         """
         errors = []
+        
+        # Create verified URLs set if resources provided
+        verified_urls = set()
+        if verified_resources:
+            verified_urls = {r['url'] for r in verified_resources}
         
         # Check weekly_plans exists
         if 'weekly_plans' not in roadmap_data:
@@ -651,6 +664,10 @@ Return ONLY valid JSON:
                             url_lower = url.lower()
                             if 'youtube.com' in url_lower or 'youtu.be' in url_lower:
                                 errors.append(f"Week {week_num}, Day {day_num}: YouTube videos are not allowed. Found YouTube URL: {url[:50]}")
+                            
+                            # Check if URL is from verified list
+                            if verified_urls and url not in verified_urls:
+                                errors.append(f"Week {week_num}, Day {day_num}: URL not in verified list: {url[:50]}")
                     else:
                         errors.append(f"Week {week_num}, Day {day_num}: URL must be a string")
                 
@@ -687,11 +704,113 @@ Return ONLY valid JSON:
                         errors.append(f"Project {i+1}: Problem statement too short (should be 3-5 sentences, at least 100 characters)")
                     
                     if 'bonus_features' not in project:
-                        errors.append(f"Project {i+1}: Missing bonus_features")
+                        warnings.append(f"Project {i+1}: Missing bonus_features")
                     elif not isinstance(project.get('bonus_features'), list) or len(project.get('bonus_features', [])) < 2:
-                        errors.append(f"Project {i+1}: bonus_features should be a list with at least 2 items")
+                        warnings.append(f"Project {i+1}: bonus_features should be a list with at least 2 items")
         
         return len(errors) == 0, errors
+    
+    def _validate_and_replace_resources(self, roadmap: Dict[str, Any], verified_resources: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Validate that all resource URLs are from verified resources list.
+        Replace any non-verified URLs with verified ones.
+        
+        Args:
+            roadmap: Roadmap dictionary
+            verified_resources: List of verified resource dictionaries
+            
+        Returns:
+            dict: Roadmap with all resources validated/replaced
+        """
+        if not verified_resources or 'weekly_plans' not in roadmap:
+            return roadmap
+        
+        # Create a lookup by URL for quick access
+        verified_urls = {r['url']: r for r in verified_resources}
+        
+        # Also create a lookup by title for fuzzy matching
+        verified_by_title = {r['title'].lower(): r for r in verified_resources}
+        
+        for week in roadmap.get('weekly_plans', []):
+            # Check detailed weeks (daily_plans)
+            if 'daily_plans' in week:
+                for day in week.get('daily_plans', []):
+                    if 'resource' in day:
+                        resource = day['resource']
+                        url = resource.get('url', '')
+                        
+                        # Check if URL is verified
+                        if url and url not in verified_urls:
+                            logger.warning(f"Non-verified URL found in Week {week.get('week', '?')}, Day {day.get('day', '?')}: {url[:50]}")
+                            
+                            # Try to find a match by title
+                            title = resource.get('title', '').lower()
+                            if title in verified_by_title:
+                                logger.info(f"Replacing with verified resource: {verified_by_title[title]['title']}")
+                                verified_resource = verified_by_title[title]
+                                day['resource'] = {
+                                    'title': verified_resource['title'],
+                                    'type': verified_resource['type'],
+                                    'platform': verified_resource['platform'],
+                                    'url': verified_resource['url'],
+                                    'what_to_learn': resource.get('what_to_learn', f"Learn {verified_resource['topics'][0] if verified_resource.get('topics') else 'the topic'}"),
+                                    'duration': verified_resource['duration']
+                                }
+                            else:
+                                # Find closest match by type or use first verified resource
+                                resource_type = resource.get('type', '')
+                                matching_resources = [r for r in verified_resources if r['type'] == resource_type]
+                                if matching_resources:
+                                    replacement = matching_resources[0]
+                                    logger.info(f"Replacing with closest verified resource: {replacement['title']}")
+                                    day['resource'] = {
+                                        'title': replacement['title'],
+                                        'type': replacement['type'],
+                                        'platform': replacement['platform'],
+                                        'url': replacement['url'],
+                                        'what_to_learn': resource.get('what_to_learn', f"Learn {replacement['topics'][0] if replacement.get('topics') else 'the topic'}"),
+                                        'duration': replacement['duration']
+                                    }
+                                else:
+                                    # Use first verified resource as fallback
+                                    replacement = verified_resources[0]
+                                    logger.warning(f"Using fallback verified resource: {replacement['title']}")
+                                    day['resource'] = {
+                                        'title': replacement['title'],
+                                        'type': replacement['type'],
+                                        'platform': replacement['platform'],
+                                        'url': replacement['url'],
+                                        'what_to_learn': resource.get('what_to_learn', f"Learn {replacement['topics'][0] if replacement.get('topics') else 'the topic'}"),
+                                        'duration': replacement['duration']
+                                    }
+            
+            # Check high-level weeks (key_resource)
+            if 'key_resource' in week:
+                resource = week['key_resource']
+                url = resource.get('url', '')
+                
+                if url and url not in verified_urls:
+                    logger.warning(f"Non-verified URL found in Week {week.get('week', '?')} key_resource: {url[:50]}")
+                    
+                    # Try to find a match
+                    title = resource.get('title', '').lower()
+                    if title in verified_by_title:
+                        verified_resource = verified_by_title[title]
+                        week['key_resource'] = {
+                            'title': verified_resource['title'],
+                            'url': verified_resource['url'],
+                            'type': verified_resource['type']
+                        }
+                    elif verified_resources:
+                        # Use first verified resource as fallback
+                        replacement = verified_resources[0]
+                        week['key_resource'] = {
+                            'title': replacement['title'],
+                            'url': replacement['url'],
+                            'type': replacement['type']
+                        }
+        
+        return roadmap
     
     def _filter_youtube_resources(self, roadmap: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -839,7 +958,26 @@ Return ONLY valid JSON:
             total_weeks = self._calculate_total_weeks(user_data)
             detailed_weeks = min(4, total_weeks)
             
-            # Detailed prompt with YouTube exclusion and problem statements
+            # Gather all verified resources for selected tools
+            available_resources = []
+            for tool in selected_tools:
+                resources = get_resources_for_tech(tool)
+                available_resources.extend(resources)
+            
+            # Remove duplicates
+            seen_urls = set()
+            unique_resources = []
+            for resource in available_resources:
+                if resource['url'] not in seen_urls:
+                    seen_urls.add(resource['url'])
+                    unique_resources.append(resource)
+            
+            logger.info(f"Found {len(unique_resources)} unique verified resources for {len(selected_tools)} technologies")
+            
+            # Convert to JSON string to include in prompt
+            resources_json = json.dumps(unique_resources, indent=2)
+            
+            # Detailed prompt with verified resources
             skills_str = ', '.join(profile.get('skills', [])[:10])  # Limit to top 10
             tools_str = ', '.join(selected_tools)
             
@@ -850,72 +988,49 @@ Learning: {tools_str}
 Time: {hours_per_week}h/week
 Style: {learning_style}
 
+AVAILABLE VERIFIED RESOURCES (you MUST use ONLY these resources):
+{resources_json}
+
 Generate JSON roadmap:
 
 1. 3-4 phases with objectives
 
 2. Detailed daily plans for FIRST {detailed_weeks} WEEKS ONLY (7 days each):
    Each day needs:
-   - Day number (1-7)
-   - Topic (what to learn today)
-   - Tasks (3-4 specific learning tasks)
-   - Hours (time allocation)
-   - ONE FREE resource (CRITICAL: NO YOUTUBE VIDEOS):
-     * Allowed resource types ONLY:
-       - Interactive Course (freeCodeCamp, Codecademy free tier, Scrimba free)
-       - Official Documentation (language/framework docs)
-       - Tutorial Article (Dev.to, Medium, Real Python, DigitalOcean)
-       - Interactive Platform (MDN Web Docs, W3Schools, GeeksforGeeks)
-       - GitHub Tutorial (repo with step-by-step guide)
-       - Free eBook/Guide (official guides, free programming books)
-     * Must include: title, type, platform, url, what_to_learn, duration
-     * Must be FREE and accessible without signup (or free signup only)
+   - Day number, topic, tasks (3-4), hours
+   - ONE resource from the AVAILABLE VERIFIED RESOURCES list above
+     * CRITICAL: Use the EXACT url from the resources provided
+     * Match the resource to the day's topic/tasks
+     * Copy title, type, platform, url, duration exactly as provided
+     * Add "what_to_learn" field explaining what to focus on from this resource for this day
    - Practice exercise
    - Expected outcome
 
 3. High-level overview for remaining weeks:
-   - Focus, main topics, hours, 1 key resource (NO YouTube)
+   - Focus, main topics, hours, 1 key resource (from verified list)
 
-4. PROJECT IDEAS (3 projects):
-   Each project MUST include:
-   - Title (clear, specific project name)
-   - Problem Statement (detailed description of what problem this project solves and why it matters)
-     * Should be 3-5 sentences explaining:
-       - What real-world problem does this address?
-       - Who would use this?
-       - What value does it provide?
-       - Why is this a good learning project?
-   - Technologies (specific tools from their selected list)
-   - Difficulty (Beginner/Intermediate/Advanced)
-   - Estimated hours (realistic time estimate)
-   - Learning outcomes (what skills they'll gain - 3-4 items)
-   - Implementation steps (5-7 detailed steps to build it)
-   - Start week (which week to begin this project)
-   - Bonus features (2-3 optional features to add after core is complete)
+4. PROJECT IDEAS (3 projects with specific problem statements):
+   Each project needs:
+   - Title
+   - Problem statement (3-5 sentences: what problem, who uses it, value, learning benefit)
+   - Technologies (from selected tools)
+   - Difficulty, estimated_hours
+   - Learning outcomes (3-4 items)
+   - Implementation steps (5-7 detailed steps)
+   - Start week
+   - Bonus features (2-3 optional features)
 
-5. Career insights (4 sentences max)
+5. Career insights (4 sentences)
 
 6. Skill gap analysis (3 strengths, 3 gaps, 2 challenges, 3 strategies)
 
-CRITICAL REQUIREMENTS:
-- ABSOLUTELY NO YOUTUBE VIDEOS OR VIDEO CONTENT
-- Only interactive courses, documentation, articles, tutorials
-- All resources must be FREE
-- Real, working URLs
-- Projects must have detailed problem statements explaining the "why"
-- Projects should be portfolio-worthy
-
-RESOURCE EXAMPLES (Use similar FREE resources):
-- freeCodeCamp interactive courses
-- Official docs: docs.soliditylang.org, reactjs.org/docs
-- MDN Web Docs tutorials
-- Dev.to articles and series
-- DigitalOcean tutorials
-- Real Python articles (free tier)
-- W3Schools interactive tutorials
-- GeeksforGeeks tutorials
-- GitHub repos with learning guides
-- Free programming books (github.com/EbookFoundation/free-programming-books)
+CRITICAL RULES:
+- ONLY use resources from the AVAILABLE VERIFIED RESOURCES list
+- NEVER generate or invent resource URLs
+- Copy URLs EXACTLY as provided in the list
+- If no perfect match exists, use the closest relevant resource
+- Each day must have a different resource (no repeats in same week)
+- Resources should progress from beginner to advanced topics
 
 PROJECT PROBLEM STATEMENT EXAMPLE:
 {{
@@ -966,12 +1081,12 @@ Return ONLY valid JSON:
           "tasks": [],
           "hours": n,
           "resource": {{
-            "title": str,
-            "type": "Interactive Course|Documentation|Tutorial Article|Interactive Platform|GitHub Tutorial|Free Guide",
-            "platform": str,
-            "url": str,
-            "what_to_learn": str,
-            "duration": str
+            "title": "EXACT title from verified list",
+            "type": "EXACT type from verified list",
+            "platform": "EXACT platform from verified list",
+            "url": "EXACT url from verified list",
+            "what_to_learn": "What to focus on from this resource today",
+            "duration": "EXACT duration from verified list"
           }},
           "practice": str,
           "outcome": str
@@ -984,7 +1099,11 @@ Return ONLY valid JSON:
       "focus": str,
       "main_topics": [],
       "total_hours": n,
-      "key_resource": {{"title": str, "url": str, "type": str}}
+      "key_resource": {{
+        "title": "from verified list",
+        "url": "from verified list",
+        "type": "from verified list"
+      }}
     }}
   ],
   "projects": [
@@ -1014,19 +1133,19 @@ Return ONLY valid JSON:
             result = self._extract_json_from_response(response_text)
             
             # Validate the response structure first (quick check)
-            is_valid_structure, structure_errors = self.validate_roadmap_structure(result)
+            is_valid_structure, structure_errors = self.validate_roadmap_structure(result, unique_resources)
             if not is_valid_structure:
                 logger.warning(f"Roadmap structure validation failed: {structure_errors}")
                 logger.info("Retrying roadmap generation with stricter prompt")
                 
                 # Retry with stricter prompt and extended timeout (15 minutes)
-                stricter_prompt = prompt + "\n\nIMPORTANT: Ensure every daily_plan has a complete resource object with url field. All 7 days must be present for each week. Verify all resource URLs are real and accessible. All URLs must start with http:// or https://. DO NOT include any YouTube videos or YouTube links - use documentation, articles, tutorials, or free courses instead. All projects must include detailed problem_statement and bonus_features fields."
+                stricter_prompt = prompt + "\n\nIMPORTANT: Ensure every daily_plan has a complete resource object with url field. All 7 days must be present for each week. CRITICAL: You MUST select resource URLs ONLY from the VERIFIED RESOURCES list provided above. DO NOT create or invent URLs. All URLs must be from the verified list. DO NOT include any YouTube videos or YouTube links. All projects must include detailed problem_statement and bonus_features fields."
                 
                 response_text = self._call_openrouter_api(stricter_prompt, timeout=900.0, max_tokens=10000)
                 result = self._extract_json_from_response(response_text)
                 
                 # Validate structure again
-                is_valid_structure, structure_errors = self.validate_roadmap_structure(result)
+                is_valid_structure, structure_errors = self.validate_roadmap_structure(result, unique_resources)
                 if not is_valid_structure:
                     logger.error(f"Roadmap structure validation failed after retry: {structure_errors}")
                     raise ValueError(f"Generated roadmap failed structure validation: {structure_errors}")
@@ -1042,6 +1161,44 @@ Return ONLY valid JSON:
             
             # Filter out any YouTube resources that might have slipped through
             result = self._filter_youtube_resources(result)
+            
+            # Validate that all URLs are from our verified list and replace any hallucinated URLs
+            if 'weekly_plans' in result:
+                verified_urls = {r['url'] for r in unique_resources}
+                
+                for week in result['weekly_plans']:
+                    if 'daily_plans' in week:
+                        for day in week['daily_plans']:
+                            if 'resource' in day and 'url' in day['resource']:
+                                url = day['resource']['url']
+                                if url not in verified_urls:
+                                    # If AI hallucinated a URL, replace with a verified one
+                                    logger.warning(f"Hallucinated URL detected: {url}")
+                                    # Find a replacement from verified resources
+                                    replacement = unique_resources[0] if unique_resources else None
+                                    if replacement:
+                                        day['resource'] = {
+                                            'title': replacement['title'],
+                                            'type': replacement['type'],
+                                            'platform': replacement['platform'],
+                                            'url': replacement['url'],
+                                            'what_to_learn': day['resource'].get('what_to_learn', 
+                                                f"Study {replacement['topics'][0] if replacement.get('topics') else 'the topic'}"),
+                                            'duration': replacement['duration']
+                                        }
+                    
+                    # Check key_resource in high-level weeks
+                    if 'key_resource' in week and 'url' in week['key_resource']:
+                        url = week['key_resource']['url']
+                        if url not in verified_urls:
+                            logger.warning(f"Hallucinated URL in key_resource: {url}")
+                            if unique_resources:
+                                replacement = unique_resources[0]
+                                week['key_resource'] = {
+                                    'title': replacement['title'],
+                                    'url': replacement['url'],
+                                    'type': replacement['type']
+                                }
             
             # Cache result
             self._cache_response(cache_key, result)
