@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  base: '/', // Ensure base path is root for production
   server: {
     port: 3000,
     proxy: {
@@ -11,6 +12,11 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: false
   }
 })
 

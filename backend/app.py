@@ -48,8 +48,28 @@ app.config['SESSION_TYPE'] = 'filesystem'
 # Register API blueprint
 app.register_blueprint(api_bp, url_prefix='/api')
 
+# Debug endpoint to check frontend build status
+@app.route('/api/debug/frontend')
+def debug_frontend():
+    """Debug endpoint to check frontend build status."""
+    return jsonify({
+        'dist_path': FRONTEND_DIST_PATH,
+        'exists': os.path.exists(FRONTEND_DIST_PATH),
+        'contents': os.listdir(FRONTEND_DIST_PATH) if os.path.exists(FRONTEND_DIST_PATH) else [],
+        'base_dir': BASE_DIR,
+        'current_dir': os.getcwd(),
+    })
+
 # Get the path to the frontend build directory
-FRONTEND_DIST_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend', 'dist')
+# Try multiple possible paths (for different deployment scenarios)
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+FRONTEND_DIST_PATH = os.path.join(BASE_DIR, 'frontend', 'dist')
+
+# Log the path for debugging
+logger.info(f"Frontend dist path: {FRONTEND_DIST_PATH}")
+logger.info(f"Frontend dist exists: {os.path.exists(FRONTEND_DIST_PATH)}")
+if os.path.exists(FRONTEND_DIST_PATH):
+    logger.info(f"Frontend dist contents: {os.listdir(FRONTEND_DIST_PATH)}")
 
 # Serve static files from frontend/dist
 # This must be last to catch all non-API routes
@@ -65,12 +85,28 @@ def serve_frontend(path):
             'error': 'NOT_FOUND'
         }), 404
     
+    # Check if dist directory exists
+    if not os.path.exists(FRONTEND_DIST_PATH):
+        logger.error(f"Frontend dist directory not found at: {FRONTEND_DIST_PATH}")
+        return jsonify({
+            'error': 'Frontend not built',
+            'message': 'Frontend dist directory not found. Please check build logs.'
+        }), 500
+    
     # Check if it's a static file that exists
     if path != "" and os.path.exists(os.path.join(FRONTEND_DIST_PATH, path)):
         # Serve static files (JS, CSS, images, etc.)
         return send_from_directory(FRONTEND_DIST_PATH, path)
     else:
         # Serve index.html for all other routes (React Router)
+        index_path = os.path.join(FRONTEND_DIST_PATH, 'index.html')
+        if not os.path.exists(index_path):
+            logger.error(f"index.html not found at: {index_path}")
+            return jsonify({
+                'error': 'Frontend not built',
+                'message': 'index.html not found. Please check build logs.',
+                'dist_path': FRONTEND_DIST_PATH
+            }), 500
         return send_from_directory(FRONTEND_DIST_PATH, 'index.html')
 
 # Global error handler
