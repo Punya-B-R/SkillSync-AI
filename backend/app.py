@@ -3,7 +3,7 @@ Flask application entry point for Career Roadmap Generator API.
 """
 import logging
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
 from api.routes import api_bp
 
@@ -48,14 +48,30 @@ app.config['SESSION_TYPE'] = 'filesystem'
 # Register API blueprint
 app.register_blueprint(api_bp, url_prefix='/api')
 
-@app.route('/')
-def health_check():
-    """Health check endpoint."""
-    return jsonify({
-        'status': 'ok',
-        'message': 'Career Roadmap Generator API',
-        'version': '1.0.0'
-    })
+# Get the path to the frontend build directory
+FRONTEND_DIST_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend', 'dist')
+
+# Serve static files from frontend/dist
+# This must be last to catch all non-API routes
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serve the frontend React app."""
+    # Don't serve frontend for API routes
+    if path.startswith('api/'):
+        return jsonify({
+            'success': False,
+            'message': 'API endpoint not found',
+            'error': 'NOT_FOUND'
+        }), 404
+    
+    # Check if it's a static file that exists
+    if path != "" and os.path.exists(os.path.join(FRONTEND_DIST_PATH, path)):
+        # Serve static files (JS, CSS, images, etc.)
+        return send_from_directory(FRONTEND_DIST_PATH, path)
+    else:
+        # Serve index.html for all other routes (React Router)
+        return send_from_directory(FRONTEND_DIST_PATH, 'index.html')
 
 # Global error handler
 @app.errorhandler(Exception)
@@ -83,12 +99,16 @@ def handle_error(error):
 
 @app.errorhandler(404)
 def not_found(error):
-    """Handle 404 errors."""
-    return jsonify({
-        'success': False,
-        'message': 'Endpoint not found',
-        'error': 'NOT_FOUND'
-    }), 404
+    """Handle 404 errors for API routes only."""
+    # If it's an API route, return JSON error
+    if request.path.startswith('/api'):
+        return jsonify({
+            'success': False,
+            'message': 'Endpoint not found',
+            'error': 'NOT_FOUND'
+        }), 404
+    # Otherwise, let Flask serve the frontend (handled by serve_frontend)
+    return serve_frontend(request.path)
 
 @app.errorhandler(400)
 def bad_request(error):
@@ -125,7 +145,7 @@ if __name__ == '__main__':
     
     logger.info("=" * 60)
     logger.info("Available Endpoints:")
-    logger.info("  GET  /                    - Health check")
+    logger.info("  GET  /                    - Frontend app")
     logger.info("  GET  /api/health          - API & OpenRouter status")
     logger.info("  POST /api/upload-resume   - Upload and parse resume")
     logger.info("  POST /api/analyze-resume  - Analyze resume with AI")

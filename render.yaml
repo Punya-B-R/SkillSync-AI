@@ -1,39 +1,25 @@
 services:
-  # Backend API Service
+  # Single unified service - Backend serves frontend
   - type: web
-    name: skillsync-backend
+    name: skillsync-app
     env: python
     region: oregon
     plan: free
-    buildCommand: pip install -r backend/requirements.txt
+    buildCommand: |
+      # Install Python dependencies
+      pip install -r backend/requirements.txt
+      # Install Node.js dependencies and build frontend
+      cd frontend && npm install && npm run build
     startCommand: cd backend && gunicorn --bind 0.0.0.0:$PORT --timeout 900 --workers 2 app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: NODE_VERSION
+        value: 18.x
       - key: FLASK_ENV
         value: production
       - key: FLASK_SECRET_KEY
         generateValue: true
       - key: OPENROUTER_API_KEY
         sync: false  # You'll need to set this in Render dashboard
-      - key: ALLOWED_ORIGINS
-        fromService:
-          type: web
-          name: skillsync-frontend
-          property: host
-
-  # Frontend Service (as static site)
-  - type: web
-    name: skillsync-frontend
-    env: static
-    region: oregon
-    plan: free
-    buildCommand: cd frontend && chmod +x build.sh && ./build.sh
-    staticPublishPath: frontend/dist
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          type: web
-          name: skillsync-backend
-          property: host
 

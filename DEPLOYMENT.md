@@ -49,8 +49,9 @@ Make sure your code is pushed to a GitHub repository. Render will automatically 
    - **Name**: `skillsync-frontend`
    - **Branch**: `main` (or your default branch)
    - **Root Directory**: Leave empty (or set to `SkillSync-AI` if your repo root is different)
-   - **Build Command**: `cd frontend && chmod +x build.sh && VITE_API_URL=https://YOUR-BACKEND-URL.onrender.com ./build.sh`
+   - **Build Command**: `cd frontend && npm install && VITE_API_URL=https://YOUR-BACKEND-URL.onrender.com npm run build`
      - Replace `YOUR-BACKEND-URL` with your actual backend URL from Step 2 (e.g., `skillsync-backend.onrender.com`)
+     - Make sure to include `https://` in the URL
    - **Publish Directory**: `frontend/dist`
    - **Plan**: `Free`
 
@@ -116,8 +117,15 @@ If you prefer to use the `render.yaml` file:
 ### Frontend Issues
 
 1. **Build fails**: Check that all dependencies are in `frontend/package.json`
-2. **API calls fail**: Verify the `VITE_API_URL` in the build command matches your backend URL
-3. **404 errors**: Make sure the `staticPublishPath` is set to `frontend/dist`
+2. **"Publish directory frontend/dist does not exist" error**:
+   - This means the build command failed before creating the dist directory
+   - Check the build logs in Render dashboard for specific errors
+   - Make sure your build command is: `cd frontend && npm install && VITE_API_URL=https://YOUR-BACKEND-URL.onrender.com npm run build`
+   - Verify that `npm run build` completes successfully (check logs)
+   - Ensure you're in the `frontend` directory when running the build
+   - Try the build command locally first: `cd frontend && npm install && npm run build`
+3. **API calls fail**: Verify the `VITE_API_URL` in the build command matches your backend URL
+4. **404 errors**: Make sure the `staticPublishPath` is set to `frontend/dist`
 
 ### Common Issues
 
