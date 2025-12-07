@@ -3,7 +3,7 @@ Flask application entry point for Career Roadmap Generator API.
 """
 import logging
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from api.routes import api_bp
 
@@ -48,7 +48,19 @@ app.config['SESSION_TYPE'] = 'filesystem'
 # Register API blueprint
 app.register_blueprint(api_bp, url_prefix='/api')
 
-@app.route('/')
+# Serve static files from frontend build
+STATIC_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist')
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    """Serve frontend static files."""
+    if path != "" and os.path.exists(os.path.join(STATIC_FOLDER, path)):
+        return send_from_directory(STATIC_FOLDER, path)
+    else:
+        return send_from_directory(STATIC_FOLDER, 'index.html')
+
+@app.route('/health')
 def health_check():
     """Health check endpoint."""
     return jsonify({
