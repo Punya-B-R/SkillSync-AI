@@ -549,7 +549,7 @@ function App() {
             <div className="text-center">
               <Loader2 className="h-16 w-16 text-blue-600 animate-spin mx-auto mb-4" />
               <h3 className="text-2xl font-bold text-gray-800 mb-2">Generating Your Roadmap</h3>
-              <p className="text-gray-600 mb-6">This may take 10-20 seconds...</p>
+              <p className="text-gray-600 mb-6">This usually takes around 5 minutes, as it performs deep research to tailor the results to the user’s needs....</p>
               <div className="space-y-2 text-left max-w-md mx-auto">
                 <div className="flex items-center gap-2 text-gray-700">
                   <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
@@ -678,7 +678,7 @@ function App() {
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="container mx-auto px-4 py-6 text-center text-gray-600 text-sm">
-          <p>© 2024 AI Career Roadmap Generator | Powered by OpenRouter AI</p>
+          <p>© 2025 AI Career Roadmap Generator | Powered by OpenRouter AI</p>
         </div>
       </footer>
     </div>
