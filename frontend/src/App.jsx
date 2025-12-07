@@ -44,6 +44,26 @@ function App() {
     return () => unsub();
   }, []);
 
+  // Helper function to remove undefined values recursively
+  const cleanObject = (obj) => {
+    if (Array.isArray(obj)) {
+      return obj.map(item => cleanObject(item)).filter(item => item !== undefined);
+    }
+
+    if (obj && typeof obj === 'object' && obj !== null) {
+      const cleaned = {};
+      Object.keys(obj).forEach(key => {
+        const value = obj[key];
+        if (value !== undefined && value !== null) {
+          cleaned[key] = cleanObject(value);
+        }
+      });
+      return cleaned;
+    }
+
+    return obj;
+  };
+
   const handleResumeComplete = (data) => {
     setResumeData(data.resumeText)
     setProfile(data.profile)
@@ -110,12 +130,12 @@ function App() {
       if (roadmap.phases && Array.isArray(roadmap.phases)) {
         learningResources = roadmap.phases.map(phase => ({
           toolName: phase.title || 'Unknown',
-          phase_number: phase.phase_number,
-          duration_weeks: phase.duration_weeks,
+          phase_number: phase.phase_number || 1,
+          duration_weeks: phase.duration_weeks || 4,
           learning_objectives: phase.learning_objectives || [],
           milestones: phase.milestones || [],
           tools_covered: phase.tools_covered || [],
-          resources: [] // You can map phase resources here if they exist
+          resources: phase.resources || []
         }));
       } else if (roadmap.learning_resources) {
         learningResources = roadmap.learning_resources;
@@ -123,8 +143,9 @@ function App() {
         learningResources = roadmap.learningResources;
       }
 
-      // Structure the roadmap data for Firebase
+      // Structure the roadmap data for Firebase - CAPTURE EVERYTHING
       const roadmapToSave = {
+        // Profile Analysis
         profileAnalysis: {
           experienceLevel: profile?.experience_level || 'Junior',
           yearsOfExperience: profile?.years_of_experience || 0,
@@ -132,51 +153,100 @@ function App() {
           topStrengths: Array.isArray(profile?.top_strengths) ? profile.top_strengths : [],
           domainExpertise: Array.isArray(profile?.domain_expertise) ? profile.domain_expertise : []
         },
+
+        // Selected Tools
         selectedTools: Array.isArray(selectedTools) ? selectedTools.map(tool => ({
           name: tool?.name || tool?.tool_name || 'Unknown Tool',
           category: tool?.domain || tool?.category || 'General',
           difficulty: tool?.difficulty || 'Moderate',
-          estimatedTime: tool?.learning_time_weeks ? `${tool.learning_time_weeks} weeks` : (tool?.estimated_time || tool?.estimatedTime || 'N/A'),
+          estimatedTime: tool?.learning_time_weeks
+            ? `${tool.learning_time_weeks} weeks`
+            : (tool?.estimated_time || tool?.estimatedTime || 'N/A'),
           description: tool?.description || ''
         })) : [],
+
+        // Learning Preferences
         learningPreferences: {
           hoursPerWeek: preferences?.hoursPerWeek || 6,
           learningStyle: preferences?.learningStyle || 'balanced',
           deadline: preferences?.deadline || null,
           hasDeadline: !!preferences?.deadline,
-          estimatedCompletion: preferences?.estimatedCompletion || roadmap?.estimated_completion_date || null,
-          totalWeeks: preferences?.totalWeeks || roadmap?.estimated_weeks || 10
+          estimatedCompletion: preferences?.estimatedCompletion || roadmap?.estimated_completion_date || roadmap?.completion_date || null,
+          totalWeeks: preferences?.totalWeeks || roadmap?.estimated_weeks || roadmap?.duration?.weeks || 10
         },
+
+        // Learning Plan
         learningPlan: {
           totalTools: Array.isArray(selectedTools) ? selectedTools.length : 0,
-          estimatedWeeks: roadmap?.estimated_weeks || roadmap?.estimatedWeeks || preferences?.totalWeeks || 10,
+          estimatedWeeks: roadmap?.estimated_weeks || roadmap?.estimatedWeeks || roadmap?.duration?.weeks || preferences?.totalWeeks || 10,
           hoursPerWeek: preferences?.hoursPerWeek || 6,
-          completionDate: preferences?.deadline || preferences?.estimatedCompletion || roadmap?.estimated_completion_date || null
+          completionDate: preferences?.deadline || preferences?.estimatedCompletion || roadmap?.estimated_completion_date || roadmap?.completion_date || null
         },
-        learningResources: learningResources,
+
+        // ===== CAPTURE ALL ROADMAP DETAILS =====
+
+        // Weekly Learning Plans (with daily breakdowns and resources)
+        weeklyPlans: roadmap?.weekly_plans || roadmap?.weeklyPlans || [],
+
+        // Phases with full details
         phases: roadmap?.phases || [],
+
+        // Learning Resources
+        learningResources: learningResources,
+
+        // Project Ideas with full implementation details
         projectIdeas: Array.isArray(roadmap?.project_ideas)
           ? roadmap.project_ideas
           : Array.isArray(roadmap?.projectIdeas)
             ? roadmap.projectIdeas
             : [],
-        careerInsights: roadmap?.career_insights || roadmap?.careerInsights || {},
+
+        // Career Insights
+        careerInsights: roadmap?.career_insights || roadmap?.careerInsights || '',
+
+        // Skill Gap Analysis
         skillGaps: {
           yourStrengths: Array.isArray(profile?.technical_skills) ? profile.technical_skills : [],
-          skillsToDevelop: Array.isArray(selectedTools) ? selectedTools.map(t => t?.name || t?.tool_name || 'Unknown') : []
+          skillsToDevelop: Array.isArray(selectedTools)
+            ? selectedTools.map(t => t?.name || t?.tool_name || 'Unknown')
+            : []
         },
+
+        // Strategies
+        strategies: roadmap?.strategies || [],
+
+        // Duration Information
+        duration: roadmap?.duration || {
+          weeks: roadmap?.estimated_weeks || 10,
+          totalHours: roadmap?.total_hours || null
+        },
+
+        // Additional Metadata
+        completionDate: roadmap?.completion_date || roadmap?.estimated_completion_date || null,
+
+        // ===== STORE ENTIRE ROADMAP OBJECT =====
+        // This ensures we don't lose any data
+        fullRoadmapData: roadmap,
+
+        // Progress Tracking
         progress: 0,
         completedTools: [],
         completedPhases: [],
+        completedWeeks: [],
         currentTool: Array.isArray(selectedTools) && selectedTools.length > 0
           ? (selectedTools[0]?.name || selectedTools[0]?.tool_name || null)
-          : null
+          : null,
+        currentWeek: 1,
+        currentPhase: 1
       }
 
-      console.log('=== Structured Roadmap to Save ===')
-      console.log(JSON.stringify(roadmapToSave, null, 2))
+      // Clean the entire object to remove any undefined values
+      const cleanedRoadmap = cleanObject(roadmapToSave);
 
-      const result = await saveRoadmap(user.uid, roadmapToSave)
+      console.log('=== Structured Roadmap to Save (Cleaned) ===')
+      console.log(JSON.stringify(cleanedRoadmap, null, 2))
+
+      const result = await saveRoadmap(user.uid, cleanedRoadmap)
 
       if (result.success) {
         setCurrentRoadmapId(result.roadmapId)
@@ -230,7 +300,6 @@ function App() {
     setCurrentRoadmapId(null)
   }
 
-  // NEW: Logout handler
   const handleLogout = async () => {
     if (window.confirm('Are you sure you want to logout?')) {
       try {
@@ -246,7 +315,6 @@ function App() {
         setCurrentRoadmapId(null)
         setView('generator')
         setSelectedRoadmapId(null)
-        // User state will be automatically cleared by onAuthStateChanged
       } catch (error) {
         console.error('Error logging out:', error);
         setError('Failed to logout. Please try again.');
@@ -296,7 +364,6 @@ function App() {
                 <p className="text-sm text-gray-600">Manage and track your learning journey</p>
               </div>
               <div className="flex items-center gap-2">
-                {/* User Email Display */}
                 <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
                   <User className="h-4 w-4 text-gray-600" />
                   <span className="text-sm text-gray-700">{user?.email}</span>
@@ -309,7 +376,6 @@ function App() {
                   Create New Roadmap
                 </button>
 
-                {/* Logout Button */}
                 <button
                   onClick={handleLogout}
                   className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
@@ -342,7 +408,6 @@ function App() {
                 <p className="text-sm text-gray-600">Track your learning progress</p>
               </div>
               <div className="flex items-center gap-2">
-                {/* User Email Display */}
                 <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
                   <User className="h-4 w-4 text-gray-600" />
                   <span className="text-sm text-gray-700">{user?.email}</span>
@@ -361,7 +426,6 @@ function App() {
                   Create New
                 </button>
 
-                {/* Logout Button */}
                 <button
                   onClick={handleLogout}
                   className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
@@ -394,7 +458,6 @@ function App() {
               <p className="text-sm text-gray-600">Powered by OpenRouter AI</p>
             </div>
             <div className="flex items-center gap-2">
-              {/* User Email Display */}
               <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
                 <User className="h-4 w-4 text-gray-600" />
                 <span className="text-sm text-gray-700">{user?.email}</span>
@@ -416,7 +479,6 @@ function App() {
                 </button>
               )}
 
-              {/* NEW: Logout Button */}
               <button
                 onClick={handleLogout}
                 className="px-4 py-2 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
