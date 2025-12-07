@@ -1,4 +1,4 @@
-# AI-Powered Career Roadmap Generator
+# SkillSync - AI-Powered Career Roadmap Generator
 
 🌐 **Live Demo:** [https://skillsync-ai-2-w9jj.onrender.com/](https://skillsync-ai-2-w9jj.onrender.com/)
 
