@@ -48,18 +48,6 @@ app.config['SESSION_TYPE'] = 'filesystem'
 # Register API blueprint
 app.register_blueprint(api_bp, url_prefix='/api')
 
-# Serve static files from frontend build
-STATIC_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist')
-
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve(path):
-    """Serve frontend static files."""
-    if path != "" and os.path.exists(os.path.join(STATIC_FOLDER, path)):
-        return send_from_directory(STATIC_FOLDER, path)
-    else:
-        return send_from_directory(STATIC_FOLDER, 'index.html')
-
 @app.route('/health')
 def health_check():
     """Health check endpoint."""
@@ -68,6 +56,31 @@ def health_check():
         'message': 'Career Roadmap Generator API',
         'version': '1.0.0'
     })
+
+# Serve static files from frontend build
+STATIC_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend', 'dist')
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    """Serve frontend static files."""
+    # Don't serve static files for API routes
+    if path.startswith('api/'):
+        return jsonify({'error': 'NOT_FOUND', 'message': 'Endpoint not found', 'success': False}), 404
+    
+    # Serve static files
+    if path != "" and os.path.exists(os.path.join(STATIC_FOLDER, path)):
+        return send_from_directory(STATIC_FOLDER, path)
+    else:
+        # Check if static folder exists
+        if os.path.exists(STATIC_FOLDER):
+            return send_from_directory(STATIC_FOLDER, 'index.html')
+        else:
+            return jsonify({
+                'error': 'STATIC_FILES_NOT_FOUND',
+                'message': 'Frontend build not found. Please build the frontend first.',
+                'static_folder': STATIC_FOLDER
+            }), 404
 
 # Global error handler
 @app.errorhandler(Exception)
