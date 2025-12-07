@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getRoadmapById, updateRoadmapProgress } from '../services/roadmapservice';
+import { getRoadmapById, updateRoadmapProgress } from '../services/roadmapService';
 import { Check, Clock, Calendar, BookOpen, Target, ChevronDown, ChevronUp, Loader2, AlertCircle, TrendingUp } from 'lucide-react';
 
 const RoadmapDetail = ({ roadmapId, onBack }) => {

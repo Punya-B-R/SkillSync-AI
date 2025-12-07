@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getUserRoadmaps, deleteRoadmap, updateRoadmapStatus } from '../services/roadmapservice';
+import { getUserRoadmaps, deleteRoadmap, updateRoadmapStatus } from '../services/roadmapService';
 import { auth } from '../firebase';
 import { Loader2, Eye, Trash2, Calendar, Clock, BookOpen, TrendingUp } from 'lucide-react';
 
