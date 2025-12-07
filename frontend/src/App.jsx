@@ -8,7 +8,7 @@ import RoadmapDetail from './components/RoadmapDetail'
 import DebugRoadmapData from './components/DebugRoadmapData'
 import AIChat from './components/AIChat'
 import { generateRoadmap } from './services/api'
-import { saveRoadmap } from './services/roadmapservice'
+import { saveRoadmap } from './services/roadmapService'
 import { Loader2, CheckCircle, AlertCircle, BookOpen, LogOut, User } from 'lucide-react'
 import { onAuthStateChanged, signOut } from "firebase/auth"
 import { auth } from "./firebase"

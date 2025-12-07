@@ -108,7 +108,7 @@ Before you start, make sure you have:
    | Key | Value | Notes |
    |-----|-------|-------|
    | `PYTHON_VERSION` | `3.11.0` | Python version |
-   | `NODE_VERSION` | `18.x` | Node.js version (needed to build frontend) |
+   | `NODE_VERSION` | `18.x` or `20.x` | **CRITICAL**: Node.js version (must be 18+ for modern dependencies) |
    | `FLASK_ENV` | `production` | Flask environment |
    | `FLASK_SECRET_KEY` | `your-random-secret-key-here` | Generate a random string (e.g., use https://randomkeygen.com/) |
    | `OPENROUTER_API_KEY` | `your-openrouter-api-key` | The API key from Step 2 |
@@ -177,8 +177,11 @@ https://your-app-name.onrender.com
 
 ## 🔧 Troubleshooting
 
-### Build Fails: "npm: command not found"
-**Solution:** Make sure `NODE_VERSION` environment variable is set to `18.x` or `20.x`
+### Build Fails: "npm: command not found" or "SyntaxError: Unexpected token"
+**Solution:** 
+- **CRITICAL**: Make sure `NODE_VERSION` environment variable is set to `18.x` or `20.x` (NOT `8.x` or older)
+- Node.js 8.x is too old and doesn't support modern JavaScript syntax
+- Go to Render dashboard → Your service → Environment → Edit `NODE_VERSION` → Set to `18.x` → Save
 
 ### Build Fails: "dist directory not found"
 **Solution:** 
