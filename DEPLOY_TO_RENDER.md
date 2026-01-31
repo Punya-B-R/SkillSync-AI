@@ -8,7 +8,7 @@ Before you start, make sure you have:
 
 1. ✅ **GitHub Account** - Your code needs to be on GitHub
 2. ✅ **Render Account** - Sign up at https://render.com (free tier available)
-3. ✅ **OpenRouter API Key** - Get one at https://openrouter.ai/keys (free tier available)
+3. ✅ **Gemini API Key** - Get one at https://aistudio.google.com/apikey (free tier available)
 
 ---
 
@@ -51,13 +51,12 @@ Before you start, make sure you have:
 
 ---
 
-### Step 2: Get Your OpenRouter API Key
+### Step 2: Get Your Gemini API Key
 
-1. Go to https://openrouter.ai/
-2. Sign in or create an account
-3. Go to https://openrouter.ai/keys
-4. Click "Create Key"
-5. **Copy the API key** - you'll need it in Step 4
+1. Go to https://aistudio.google.com/apikey
+2. Sign in with your Google account
+3. Create an API key
+4. **Copy the API key** - you'll need it in Step 4
 
 ---
 
@@ -111,12 +110,12 @@ Before you start, make sure you have:
    | `NODE_VERSION` | `18.x` or `20.x` | **CRITICAL**: Node.js version (must be 18+ for modern dependencies) |
    | `FLASK_ENV` | `production` | Flask environment |
    | `FLASK_SECRET_KEY` | `your-random-secret-key-here` | Generate a random string (e.g., use https://randomkeygen.com/) |
-   | `OPENROUTER_API_KEY` | `your-openrouter-api-key` | The API key from Step 2 |
+   | `GEMINI_API_KEY` | `your-gemini-api-key` | The API key from Step 2 |
 
    **Important Notes:**
    - `NODE_VERSION` is **required** - Render needs it to build your React frontend
    - `FLASK_SECRET_KEY` should be a long random string (at least 32 characters)
-   - `OPENROUTER_API_KEY` is your actual API key from OpenRouter
+   - `GEMINI_API_KEY` is your actual API key from Gemini
 
 5. **Review and Create:**
    - Double-check all settings
@@ -145,7 +144,7 @@ Before you start, make sure you have:
    - Common issues:
      - Missing `NODE_VERSION` → Add it as environment variable
      - Build errors → Check that all dependencies are in `package.json` and `requirements.txt`
-     - API key issues → Verify `OPENROUTER_API_KEY` is set correctly
+     - API key issues → Verify `GEMINI_API_KEY` is set correctly
 
 ---
 
@@ -198,7 +197,7 @@ https://your-app-name.onrender.com
 
 ### API Calls Fail
 **Solution:**
-- Verify `OPENROUTER_API_KEY` is set correctly
+- Verify `GEMINI_API_KEY` is set correctly
 - Check backend logs in Render dashboard
 - Make sure backend is running (check `/api/health` endpoint)
 
@@ -226,7 +225,7 @@ Here's a quick reference of all environment variables:
 | `NODE_VERSION` | ✅ Yes | `18.x` | Node.js version for building frontend |
 | `FLASK_ENV` | ✅ Yes | `production` | Flask environment mode |
 | `FLASK_SECRET_KEY` | ✅ Yes | Random string | Flask session secret |
-| `OPENROUTER_API_KEY` | ✅ Yes | `sk-or-v1-...` | OpenRouter API key |
+| `GEMINI_API_KEY` | ✅ Yes | `sk-or-v1-...` | Gemini API key |
 
 ---
 
@@ -303,7 +302,7 @@ Before deploying, make sure:
 - [ ] Code is pushed to GitHub
 - [ ] All dependencies are in `requirements.txt` and `package.json`
 - [ ] `render.yaml` is in repository (optional, for blueprint deployment)
-- [ ] You have OpenRouter API key
+- [ ] You have Gemini API key
 - [ ] You have Render account
 - [ ] Environment variables are ready
 

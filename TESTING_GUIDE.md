@@ -4,7 +4,7 @@
 
 ### Backend
 1. ✅ Flask server running on `http://localhost:5000`
-2. ✅ `.env` file with `OPENROUTER_API_KEY` set
+2. ✅ `.env` file with `GEMINI_API_KEY` set
 3. ✅ All Python dependencies installed
 
 ### Frontend
@@ -26,7 +26,7 @@ python app.py
 ============================================================
 Starting Career Roadmap Generator API
 ============================================================
-✓ OpenRouter API: Connected
+✓ AI (Gemini) API: Connected
 ✓ Model: meta-llama/llama-3.3-70b-instruct:free
 ============================================================
 Server starting on http://localhost:5000
@@ -133,7 +133,7 @@ npm run dev
 
 ### Backend Issues
 
-**Problem:** "OPENROUTER_API_KEY not found"
+**Problem:** "GEMINI_API_KEY not found"
 - **Solution:** Create `.env` file in `backend/` with your API key
 
 **Problem:** "Module not found"
@@ -157,7 +157,7 @@ npm run dev
 ### AI/API Issues
 
 **Problem:** "Analysis failed" or timeout
-- **Solution:** Check OpenRouter API key is valid
+- **Solution:** Check Gemini API key is valid
 - **Solution:** Check internet connection
 - **Solution:** Free tier may have rate limits
 

@@ -6,7 +6,7 @@ This guide will help you deploy SkillSync-AI to Render.
 
 1. A GitHub account with your code pushed to a repository
 2. A Render account (sign up at https://render.com)
-3. An OpenRouter API key (get one at https://openrouter.ai/keys)
+3. A Gemini API key (get one at https://aistudio.google.com/apikey)
 
 ## Deployment Steps
 
@@ -34,7 +34,7 @@ Make sure your code is pushed to a GitHub repository. Render will automatically 
    - `PYTHON_VERSION` = `3.11.0`
    - `FLASK_ENV` = `production`
    - `FLASK_SECRET_KEY` = (Generate a random secret key)
-   - `OPENROUTER_API_KEY` = (Your OpenRouter API key)
+   - `GEMINI_API_KEY` = (Your Gemini API key)
    - `ALLOWED_ORIGINS` = (Leave empty for now, we'll set this after frontend deploys)
 
 7. Click **"Create Web Service"**
@@ -89,7 +89,7 @@ If you prefer to use the `render.yaml` file:
 2. In Render dashboard, click **"New +"** and select **"Blueprint"**
 3. Connect your repository and select it
 4. Render will automatically detect and use your `render.yaml` file
-5. You'll still need to manually set the `OPENROUTER_API_KEY` environment variable in the backend service
+5. You'll still need to manually set the `GEMINI_API_KEY` environment variable in the backend service
 6. After both services deploy, update the `ALLOWED_ORIGINS` in the backend service
 
 **Note**: When using render.yaml, you may need to manually update the frontend build command with the actual backend URL after deployment.
@@ -100,7 +100,7 @@ If you prefer to use the `render.yaml` file:
 - `PYTHON_VERSION`: `3.11.0`
 - `FLASK_ENV`: `production`
 - `FLASK_SECRET_KEY`: (Random secret key)
-- `OPENROUTER_API_KEY`: (Your OpenRouter API key)
+- `GEMINI_API_KEY`: (Your Gemini API key)
 - `ALLOWED_ORIGINS`: (Your frontend URL, e.g., `https://skillsync-frontend.onrender.com`)
 
 ### Frontend Service

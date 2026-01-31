@@ -13,7 +13,7 @@ This guide will help you deploy SkillSync-AI to Render with **ONE SINGLE URL** -
 
 1. A GitHub account with your code pushed to a repository
 2. A Render account (sign up at https://render.com)
-3. An OpenRouter API key (get one at https://openrouter.ai/keys)
+3. A Gemini API key (get one at https://aistudio.google.com/apikey)
 
 ## Quick Deployment Steps
 
@@ -50,7 +50,7 @@ Make sure all your changes are pushed to GitHub.
      - `NODE_VERSION` = `18.x` (or `20.x`)
      - `FLASK_ENV` = `production`
      - `FLASK_SECRET_KEY` = (Generate a random secret key, or let Render generate it)
-     - `OPENROUTER_API_KEY` = (Your OpenRouter API key)
+     - `GEMINI_API_KEY` = (Your Gemini API key)
 
 7. Click **"Create Web Service"**
 
@@ -66,7 +66,7 @@ Alternatively, you can use the `render.yaml` file:
 2. In Render dashboard, click **"New +"** → **"Blueprint"**
 3. Connect your repository
 4. Render will detect and use `render.yaml`
-5. **Still need to set**: `OPENROUTER_API_KEY` environment variable manually
+5. **Still need to set**: `GEMINI_API_KEY` environment variable manually
 
 ## How It Works
 
@@ -113,7 +113,7 @@ Alternatively, you can use the `render.yaml` file:
 
 **API calls fail**
 - Check browser console for errors
-- Verify `OPENROUTER_API_KEY` is set correctly
+- Verify `GEMINI_API_KEY` is set correctly
 - Check backend logs in Render dashboard
 
 ### Performance Issues
@@ -129,7 +129,7 @@ Alternatively, you can use the `render.yaml` file:
 - `NODE_VERSION`: `18.x` or `20.x`
 - `FLASK_ENV`: `production`
 - `FLASK_SECRET_KEY`: (Random secret key)
-- `OPENROUTER_API_KEY`: (Your OpenRouter API key)
+- `GEMINI_API_KEY`: (Your Gemini API key)
 
 **Note**: No CORS configuration needed! Frontend and backend are on the same domain.
 

@@ -1,7 +1,10 @@
 """
-AI service for interacting with OpenRouter API (Llama 3.3 70B).
+AI service for interacting with Gemini API (OpenAI-compatible endpoint).
+Optional: Google Search grounding via google-genai for real resource URLs.
 """
+import ast
 import os
+import re
 import json
 import logging
 import time
@@ -20,31 +23,50 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Optional: Google Search grounding (google-genai package)
+_grounding_client = None
+_grounding_available = False
+try:
+    from google import genai
+    from google.genai import types
+    _grounding_available = True
+except ImportError:
+    genai = None
+    types = None
+
+# Gemini OpenAI-compatible base URL (see https://ai.google.dev/gemini-api/docs/openai)
+GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+
 class AIService:
     """Service for AI-powered analysis and recommendations."""
     
     CACHE_TIMEOUT = 300  # 5 minutes in seconds
-    MODEL_NAME = "meta-llama/llama-3.3-70b-instruct:free"
-    OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+    MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-2.0-flash')
     
     def __init__(self):
-        api_key = os.getenv('OPENROUTER_API_KEY')
+        api_key = os.getenv('GEMINI_API_KEY')
         if not api_key:
-            logger.error("OPENROUTER_API_KEY not found in environment variables")
-            raise ValueError("OPENROUTER_API_KEY not found in environment variables")
+            logger.error("GEMINI_API_KEY not found in environment variables")
+            raise ValueError("GEMINI_API_KEY not found in environment variables")
         
         try:
-            # Initialize OpenAI client for OpenRouter
-            # Using simple initialization to avoid version conflicts
-            import httpx
             self.client = OpenAI(
                 api_key=api_key,
-                base_url=self.OPENROUTER_BASE_URL
+                base_url=GEMINI_OPENAI_BASE_URL
             )
-            logger.info(f"OpenRouter API initialized successfully with model: {self.MODEL_NAME}")
+            logger.info(f"Gemini API initialized successfully with model: {self.MODEL_NAME}")
         except Exception as e:
-            logger.error(f"Failed to initialize OpenRouter API: {str(e)}")
-            raise ValueError(f"Failed to initialize OpenRouter API: {str(e)}")
+            logger.error(f"Failed to initialize Gemini API: {str(e)}")
+            raise ValueError(f"Failed to initialize Gemini API: {str(e)}")
+        
+        # Optional: client for Google Search grounding (real web URLs in resource finding)
+        self._grounding_client = None
+        if _grounding_available and api_key:
+            try:
+                self._grounding_client = genai.Client(api_key=api_key)
+                logger.info("Google Search grounding enabled for resource finding")
+            except Exception as e:
+                logger.debug("Grounding client not available: %s", e)
         
         # Response cache: {cache_key: (response, timestamp)}
         self.cache = {}
@@ -93,15 +115,15 @@ class AIService:
         if expired_keys:
             logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
     
-    def _call_openrouter_api(self, prompt: str, retry: bool = True, max_tokens: int = 8000, timeout: float = 120.0) -> str:
+    def _call_ai_api(self, prompt: str, retry: bool = True, max_tokens: int = 8000, timeout: float = 120.0) -> str:
         """
-        Call OpenRouter API with optimized settings for speed and error handling.
+        Call Gemini API (OpenAI-compatible) with optimized settings for speed and error handling.
         
         Args:
-            prompt: Prompt to send to OpenRouter
+            prompt: Prompt to send
             retry: Whether to retry on failure
             max_tokens: Maximum tokens to generate (default 8000 for roadmaps)
-            timeout: Request timeout in seconds (default 120s, increased to 180s for roadmaps)
+            timeout: Request timeout in seconds
             
         Returns:
             str: API response text
@@ -111,7 +133,7 @@ class AIService:
             TimeoutError: For timeout errors
         """
         try:
-            logger.info(f"Calling OpenRouter API with model: {self.MODEL_NAME}")
+            logger.info(f"Calling Gemini API with model: {self.MODEL_NAME}")
             logger.debug(f"Prompt length: {len(prompt)} characters, max_tokens: {max_tokens}")
             
             response = self.client.chat.completions.create(
@@ -128,14 +150,14 @@ class AIService:
             )
             
             if not response or not response.choices or len(response.choices) == 0:
-                raise ValueError("Empty response from OpenRouter API")
+                raise ValueError("Empty response from Gemini API")
             
             response_text = response.choices[0].message.content
             
             if not response_text:
-                raise ValueError("Empty response content from OpenRouter API")
+                raise ValueError("Empty response content from Gemini API")
             
-            logger.info("OpenRouter API call successful")
+            logger.info("Gemini API call successful")
             return response_text.strip()
             
         except Exception as e:
@@ -149,7 +171,7 @@ class AIService:
             # Handle invalid API key
             if 'api key' in error_msg or 'authentication' in error_msg or 'invalid' in error_msg or '401' in error_msg:
                 logger.error("Invalid API key")
-                raise ValueError("Invalid API key. Please check your OPENROUTER_API_KEY environment variable.")
+                raise ValueError("Invalid API key. Please check your GEMINI_API_KEY environment variable.")
             
             # Handle timeout
             if 'timeout' in error_msg or 'timed out' in error_msg:
@@ -157,32 +179,33 @@ class AIService:
                 if retry:
                     logger.info("Retrying API call with reduced max_tokens after timeout")
                     time.sleep(2)
-                    # Retry with reduced max_tokens for faster response
-                    return self._call_openrouter_api(prompt, retry=False, max_tokens=max_tokens // 2, timeout=timeout)
+                    return self._call_ai_api(prompt, retry=False, max_tokens=max_tokens // 2, timeout=timeout)
                 else:
                     raise TimeoutError("API request timed out. Please try again.")
             
             # Generic error
-            logger.error(f"OpenRouter API error: {str(e)}")
+            logger.error(f"Gemini API error: {str(e)}")
             if retry:
                 logger.info("Retrying API call after error")
                 time.sleep(2)
-                return self._call_openrouter_api(prompt, retry=False, max_tokens=max_tokens, timeout=timeout)
+                return self._call_ai_api(prompt, retry=False, max_tokens=max_tokens, timeout=timeout)
             else:
                 raise ValueError(f"API error: {str(e)}")
     
+    def _repair_json(self, raw: str) -> str:
+        """Fix common LLM JSON issues: trailing commas before } or ]."""
+        # Remove trailing commas (invalid in JSON but often emitted by LLMs)
+        for _ in range(20):  # enough for deep nesting
+            new_raw = re.sub(r',\s*}', '}', raw)
+            new_raw = re.sub(r',\s*]', ']', new_raw)
+            if new_raw == raw:
+                break
+            raw = new_raw
+        return raw
+
     def _extract_json_from_response(self, response_text: str) -> Dict[str, Any]:
         """
-        Extract JSON from API response, handling markdown code blocks.
-        
-        Args:
-            response_text: Raw response text from API
-            
-        Returns:
-            dict: Parsed JSON data
-            
-        Raises:
-            ValueError: If JSON parsing fails
+        Extract JSON from API response, handling markdown code blocks and common LLM errors.
         """
         try:
             # Remove markdown code blocks if present
@@ -194,20 +217,48 @@ class AIService:
                 start = response_text.find('```') + 3
                 end = response_text.find('```', start)
                 response_text = response_text[start:end].strip()
-            
-            # Parse JSON
-            data = json.loads(response_text)
-            logger.debug("JSON parsed successfully")
-            return data
-            
+
+            # First attempt: parse as-is
+            try:
+                data = json.loads(response_text)
+                logger.debug("JSON parsed successfully")
+                return data
+            except json.JSONDecodeError:
+                pass
+
+            # Second attempt: repair common issues then parse
+            repaired = self._repair_json(response_text)
+            try:
+                data = json.loads(repaired)
+                logger.info("JSON parsed successfully after repair (trailing commas/control chars)")
+                return data
+            except json.JSONDecodeError:
+                pass
+
+            # Third attempt: Python literal (single-quoted keys, True/False/None)
+            try:
+                data = ast.literal_eval(response_text)
+                if isinstance(data, (dict, list)):
+                    logger.info("JSON parsed successfully via ast.literal_eval (Python-style literals)")
+                    return data
+            except (ValueError, SyntaxError):
+                pass
+
+            raise ValueError("Could not parse response as JSON (all attempts failed)")
+
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {str(e)}")
-            logger.debug(f"Response text: {response_text[:500]}")
+            # Log snippet around error position for debugging
+            if e.pos is not None and len(response_text) > e.pos:
+                start = max(0, e.pos - 80)
+                end = min(len(response_text), e.pos + 80)
+                snippet = response_text[start:end].replace('\n', ' ')
+                logger.debug(f"Near error position: ...{snippet}...")
             raise ValueError(f"Failed to parse JSON response: {str(e)}")
     
     def analyze_resume(self, resume_text: str) -> Dict[str, Any]:
         """
-        Use OpenRouter (Llama 3.3) to extract structured information from resume.
+        Use Gemini to extract structured information from resume.
         
         Args:
             resume_text: Text content of resume
@@ -252,7 +303,7 @@ Return ONLY valid JSON:
 }}
 """
             
-            response_text = self._call_openrouter_api(prompt)
+            response_text = self._call_ai_api(prompt)
             result = self._extract_json_from_response(response_text)
             
             # Validate required fields
@@ -337,7 +388,7 @@ Return ONLY valid JSON:
 }}
 """
             
-            response_text = self._call_openrouter_api(prompt)
+            response_text = self._call_ai_api(prompt)
             result = self._extract_json_from_response(response_text)
             
             # Validate structure
@@ -704,9 +755,9 @@ Return ONLY valid JSON:
                         errors.append(f"Project {i+1}: Problem statement too short (should be 3-5 sentences, at least 100 characters)")
                     
                     if 'bonus_features' not in project:
-                        warnings.append(f"Project {i+1}: Missing bonus_features")
+                        errors.append(f"Project {i+1}: Missing bonus_features")
                     elif not isinstance(project.get('bonus_features'), list) or len(project.get('bonus_features', [])) < 2:
-                        warnings.append(f"Project {i+1}: bonus_features should be a list with at least 2 items")
+                        errors.append(f"Project {i+1}: bonus_features should be a list with at least 2 items")
         
         return len(errors) == 0, errors
     
@@ -886,326 +937,393 @@ Return ONLY valid JSON:
     
     def _calculate_total_weeks(self, user_data: Dict[str, Any]) -> int:
         """
-        Calculate estimated total weeks needed based on tools and hours per week.
-        
-        Args:
-            user_data: User data with selected_tools and hours_per_week
-            
-        Returns:
-            int: Estimated total weeks
+        Total weeks: use user-specified total_weeks if provided (from frontend "Estimated Weeks"),
+        otherwise estimate from tools and hours per week.
         """
+        # Respect user's chosen duration from the Time Commitment step
+        user_weeks = user_data.get('total_weeks') or user_data.get('totalWeeks')
+        if user_weeks is not None:
+            try:
+                w = int(user_weeks)
+                if 1 <= w <= 24:
+                    return max(4, min(16, w))
+            except (TypeError, ValueError):
+                pass
+
         selected_tools = user_data.get('selected_tools', [])
         hours_per_week = user_data.get('hours_per_week', 10)
-        
-        # Rough estimate: 2-3 weeks per tool, adjusted by hours per week
+
         base_weeks_per_tool = 2.5
         tools_count = len(selected_tools)
-        
-        # Adjust based on hours per week (more hours = faster)
         time_multiplier = max(0.7, min(1.3, 10 / hours_per_week))
-        
         total_weeks = int(tools_count * base_weeks_per_tool * time_multiplier)
-        
-        # Ensure minimum 4 weeks and maximum 16 weeks
         return max(4, min(16, total_weeks))
-    
+
+    def _determine_experience_level(self, user_data: Dict[str, Any]) -> str:
+        """Determine experience level from profile."""
+        profile = user_data.get('profile', {})
+        return profile.get('experience_level', 'Mid-Level') or 'Mid-Level'
+
+    def _generate_roadmap_structure(self, user_data: Dict[str, Any], total_weeks: int, experience_level: str) -> Dict[str, Any]:
+        """
+        STEP 1: Generate roadmap structure (phases, weekly_plans, topics, objectives).
+        Daily plans include a placeholder resource; step 2 will replace with real resources.
+        """
+        profile = user_data.get('profile', {})
+        selected_tools = user_data.get('selected_tools', [])
+        hours_per_week = user_data.get('hours_per_week', 10)
+        skills_str = ', '.join(profile.get('skills', [])[:10])
+        tools_str = ', '.join(selected_tools)
+        detailed_weeks = min(4, total_weeks)
+
+        placeholder_resource = {
+            "title": "To be added",
+            "type": "Documentation",
+            "platform": "TBD",
+            "url": "https://www.example.com",
+            "what_to_learn": "TBD",
+            "duration": "TBD"
+        }
+
+        prompt = f"""You are an expert curriculum designer for tech education.
+
+USER: Experience {experience_level}, Skills: {skills_str}, Learning: {tools_str}, Time: {hours_per_week}h/week.
+TASK: Create a {total_weeks}-week learning roadmap STRUCTURE. Do NOT invent resource URLs - use the placeholder below for every day's resource.
+
+OUTPUT (valid JSON only, no markdown):
+{{
+  "total_duration_weeks": {total_weeks},
+  "estimated_completion_date": "YYYY-MM-DD",
+  "phases": [{{"phase": n, "title": str, "duration_weeks": n, "tools": [], "objectives": [], "milestones": []}}],
+  "weekly_plans": [
+    (For weeks 1-{detailed_weeks}: each week has "week", "phase", "focus", "objectives", "prerequisites", "daily_plans" with exactly 7 days. Each day has "day", "topic", "tasks" (array), "hours", "resource" (use this exact placeholder: {json.dumps(placeholder_resource)}), "practice", "outcome".)
+    (For weeks {detailed_weeks + 1}+: "week", "phase", "focus", "main_topics", "total_hours", "key_resource" with "title", "url", "type" - use placeholder url "https://www.example.com")
+  ],
+  "projects": [{{"title", "problem_statement", "technologies", "difficulty", "estimated_hours", "learning_outcomes", "steps", "start_week", "bonus_features"}}],
+  "career_insights": "string",
+  "skill_gap_analysis": {{"strengths": [], "gaps": [], "challenges": [], "strategies": []}}
+}}
+
+RULES:
+- EXACTLY {total_weeks} weeks in weekly_plans. First {detailed_weeks} weeks: full daily_plans (7 days each) with the placeholder resource. Rest: high-level with key_resource.
+- Topics must be SPECIFIC (e.g. "Pandas DataFrames and Series", "React useState and useEffect"), not generic.
+- Return ONLY valid JSON. No trailing commas."""
+
+        json_rules = "\n\nCRITICAL: Output must be valid JSON only. Use double quotes for ALL keys and string values (never single quotes). No trailing commas after the last item in any object or array. No unquoted property names. No literal newlines inside strings (use \\n)."
+
+        try:
+            response_text = self._call_ai_api(prompt + json_rules, timeout=300.0, max_tokens=8000)
+            result = self._extract_json_from_response(response_text)
+        except ValueError as parse_err:
+            logger.warning(f"Structure JSON parse failed, retrying with stricter prompt: {parse_err}")
+            response_text = self._call_ai_api(prompt + json_rules + "\n\nYou MUST output strictly valid JSON. Every property name in double quotes. No single quotes anywhere. No trailing commas.", timeout=300.0, max_tokens=8000)
+            result = self._extract_json_from_response(response_text)
+
+        if result is None or not isinstance(result, dict):
+            logger.warning("Roadmap structure parse returned None or non-dict; using fallback structure")
+            from datetime import datetime, timedelta
+            result = {
+                "total_duration_weeks": total_weeks,
+                "estimated_completion_date": (datetime.now() + timedelta(weeks=total_weeks)).strftime("%Y-%m-%d"),
+                "phases": [{"phase": 1, "title": "Learning Phase", "duration_weeks": total_weeks, "tools": selected_tools, "objectives": [], "milestones": []}],
+                "weekly_plans": [
+                    {
+                        "week": w,
+                        "phase": 1,
+                        "focus": f"{tools_str} – Week {w}",
+                        "objectives": [],
+                        "prerequisites": [],
+                        "daily_plans": [
+                            {"day": d, "topic": f"Day {d}", "tasks": [], "hours": round(hours_per_week / 7, 1), "resource": placeholder_resource, "practice": "", "outcome": ""}
+                            for d in range(1, 8)
+                        ],
+                    }
+                    for w in range(1, total_weeks + 1)
+                ],
+                "projects": [],
+                "career_insights": "",
+                "skill_gap_analysis": {"strengths": [], "gaps": [], "challenges": [], "strategies": []},
+            }
+
+        logger.info(f"Generated roadmap structure with {len(result.get('weekly_plans', []))} weeks")
+        return result
+
+    def _search_resources_with_grounding(self, topic: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Use Google Search grounding to find real, working resource URLs for a topic.
+        Returns list of resources in app format, or None on failure/unavailable.
+        """
+        if not self._grounding_client or not _grounding_available:
+            return None
+        prompt = f"""Find 3-4 high-quality FREE learning resources for: "{topic}"
+
+Search the web and provide REAL, WORKING URLs. Include:
+- One article or blog (Real Python, Medium, Dev.to, etc.)
+- One official documentation or interactive tutorial
+- One more helpful resource (course, guide, or docs)
+
+Requirements: FREE, reputable sources, real URLs. Prefer recent content.
+
+Return ONLY a JSON array (no other text, no markdown):
+[
+  {{"title": "Exact title", "type": "Article", "url": "https://...", "platform": "Platform", "duration": "15 mins", "description": "What you learn"}},
+  {{"title": "Docs title", "type": "Documentation", "url": "https://...", "platform": "Official", "duration": "Reference", "description": "Reference"}}
+]
+Valid JSON array only. No trailing commas."""
+
+        try:
+            grounding_tool = types.Tool(google_search=types.GoogleSearch())
+            config = types.GenerateContentConfig(tools=[grounding_tool], temperature=0.7)
+            response = self._grounding_client.models.generate_content(
+                model=self.MODEL_NAME,
+                contents=prompt,
+                config=config,
+            )
+            if hasattr(response, 'candidates') and response.candidates:
+                cand = response.candidates[0]
+                if hasattr(cand, 'grounding_metadata') and cand.grounding_metadata:
+                    logger.info("Grounding used - found web sources for: %s", topic[:50])
+            text = (response.text or "").replace("```json", "").replace("```", "").strip()
+            data = self._extract_json_from_response(text)
+            if isinstance(data, list):
+                resources = data
+            elif isinstance(data, dict) and data.get("resources"):
+                resources = data["resources"]
+            else:
+                resources = []
+            allowed = (
+                "Interactive Course",
+                "Documentation",
+                "Tutorial Article",
+                "Interactive Platform",
+                "GitHub Tutorial",
+                "Free Guide",
+            )
+            type_map = {
+                "article": "Tutorial Article",
+                "course": "Interactive Course",
+                "interactive": "Interactive Platform",
+                "documentation": "Documentation",
+                "docs": "Documentation",
+                "youtube video": "Free Guide",
+                "video": "Free Guide",
+                "guide": "Free Guide",
+            }
+            validated = []
+            for r in resources:
+                if not isinstance(r, dict) or not r.get("url") or not str(r["url"]).startswith("http"):
+                    continue
+                t = (r.get("type") or "Article").strip()
+                res_type = type_map.get(t.lower(), t) if isinstance(t, str) else "Tutorial Article"
+                if res_type not in allowed:
+                    res_type = "Tutorial Article"
+                validated.append({
+                    "title": r.get("title", "Resource"),
+                    "type": res_type,
+                    "platform": r.get("platform", ""),
+                    "url": r["url"],
+                    "what_to_learn": r.get("description", r.get("whyThisResource", "")),
+                    "duration": r.get("duration", "N/A"),
+                })
+            if len(validated) >= 2:
+                return validated[:5]
+            # Optionally merge in URLs from grounding_chunks if response had them
+            if hasattr(response, "candidates") and response.candidates:
+                cand = response.candidates[0]
+                if hasattr(cand, "grounding_metadata") and getattr(cand.grounding_metadata, "grounding_chunks", None):
+                    for chunk in cand.grounding_metadata.grounding_chunks[:4]:
+                        if hasattr(chunk, "web") and chunk.web:
+                            uri = getattr(chunk.web, "uri", None) or getattr(chunk.web, "url", None)
+                            title = getattr(chunk.web, "title", None) or "Web resource"
+                            if uri and uri.startswith("http") and not any(v.get("url") == uri for v in validated):
+                                validated.append({
+                                    "title": title or "Resource",
+                                    "type": "Tutorial Article",
+                                    "platform": "Web",
+                                    "url": uri,
+                                    "what_to_learn": f"Learn about {topic}",
+                                    "duration": "Varies",
+                                })
+            return validated[:5] if len(validated) >= 2 else None
+        except Exception as e:
+            logger.debug("Grounding resource search failed for %s: %s", topic[:40], e)
+            return None
+
+    def _find_resources_for_day(self, topic: str, week_num: int, day_num: int) -> List[Dict[str, Any]]:
+        """
+        Find 2-5 unique resources for ONE specific day's topic.
+        Tries Google Search grounding first for real URLs; falls back to non-grounding AI.
+        """
+        # Prefer grounding for real, working URLs
+        grounded = self._search_resources_with_grounding(topic)
+        if grounded and len(grounded) >= 2:
+            logger.info("Week %s, Day %s: using %s grounded resources for '%s'", week_num, day_num, len(grounded), topic[:50])
+            return grounded[:5]
+
+        prompt = f"""Find 3-4 FREE learning resources specifically for: "{topic}"
+
+Requirements:
+- Must be FREE and accessible.
+- Must be SPECIFIC to "{topic}" (not generic).
+- Include different types: article, documentation, interactive (no YouTube if possible; if you include one, use a real video URL).
+- Real, working URLs only.
+
+Popular sources: Real Python, Medium, Dev.to, DigitalOcean, MDN, Python/React/Pandas official docs, freeCodeCamp, W3Schools, Kaggle, Scrimba.
+
+Return a JSON array only (no other text, no markdown):
+[
+  {{"title": "Specific resource title", "type": "Article", "url": "https://...", "platform": "Platform name", "duration": "15 mins", "description": "What you'll learn"}},
+  {{"title": "Docs or tutorial", "type": "Documentation", "url": "https://...", "platform": "Official Docs", "duration": "Reference", "description": "Official reference"}}
+]
+
+Return 3-4 resources for "{topic}". Valid JSON array only. No trailing commas."""
+
+        try:
+            response_text = self._call_ai_api(prompt, timeout=60.0, max_tokens=1500)
+            data = self._extract_json_from_response(response_text)
+            if isinstance(data, list):
+                resources = data
+            elif isinstance(data, dict) and 'resources' in data:
+                resources = data['resources']
+            else:
+                resources = []
+            allowed_types = ('Interactive Course', 'Documentation', 'Tutorial Article', 'Interactive Platform', 'GitHub Tutorial', 'Free Guide')
+            type_map = {'article': 'Tutorial Article', 'course': 'Interactive Course', 'interactive': 'Interactive Platform', 'documentation': 'Documentation', 'docs': 'Documentation', 'youtube video': 'Free Guide', 'video': 'Free Guide', 'guide': 'Free Guide'}
+            validated = []
+            for r in resources:
+                if isinstance(r, dict) and r.get('url') and str(r['url']).startswith('http'):
+                    t = (r.get('type') or 'Article').strip()
+                    res_type = type_map.get(t.lower(), t) if isinstance(t, str) else 'Tutorial Article'
+                    if res_type not in allowed_types:
+                        res_type = 'Tutorial Article'
+                    validated.append({
+                        'title': r.get('title', 'Resource'),
+                        'type': res_type,
+                        'platform': r.get('platform', ''),
+                        'url': r['url'],
+                        'what_to_learn': r.get('description', r.get('whyThisResource', '')),
+                        'duration': r.get('duration', 'N/A')
+                    })
+            if len(validated) < 2:
+                validated.extend(self._get_fallback_for_topic(topic, 3 - len(validated)))
+            logger.info(f"Week {week_num}, Day {day_num}: found {len(validated)} resources for '{topic[:50]}'")
+            return validated[:5]
+        except Exception as e:
+            logger.warning(f"Error finding resources for day ({topic[:30]}): {e}")
+            return self._get_fallback_for_topic(topic, 3)
+
+    def _get_fallback_for_topic(self, topic: str, count: int = 3) -> List[Dict[str, Any]]:
+        """Fallback resources when AI fails for a day's topic."""
+        encoded = topic.replace(' ', '+') if topic else 'programming'
+        fallbacks = [
+            {"title": f"Search '{topic}' on YouTube", "type": "Free Guide", "platform": "YouTube", "url": f"https://www.youtube.com/results?search_query={encoded}", "what_to_learn": "Search results for this topic", "duration": "Varies"},
+            {"title": "W3Schools tutorials", "type": "Interactive Platform", "platform": "W3Schools", "url": "https://www.w3schools.com/", "what_to_learn": "Interactive tutorials", "duration": "Varies"},
+            {"title": "freeCodeCamp Learn", "type": "Interactive Course", "platform": "freeCodeCamp", "url": "https://www.freecodecamp.org/learn", "what_to_learn": "Hands-on courses", "duration": "Varies"},
+            {"title": "Real Python", "type": "Tutorial Article", "platform": "Real Python", "url": "https://realpython.com/", "what_to_learn": "Articles and tutorials", "duration": "Varies"},
+            {"title": "MDN Web Docs", "type": "Documentation", "platform": "Mozilla", "url": "https://developer.mozilla.org/", "what_to_learn": "Web reference", "duration": "Reference"},
+        ]
+        return fallbacks[:count]
+
+    def _add_resources_to_each_day(self, roadmap: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        STEP 2: For each day (in weekly_plans with daily_plans), one AI call to find resources for that day's topic.
+        Sets day['resource'] (first resource for frontend) and day['resources'] (full list).
+        """
+        for week in roadmap.get('weekly_plans', []):
+            if 'daily_plans' not in week or not week['daily_plans']:
+                if 'key_resource' in week and week.get('key_resource', {}).get('url') == 'https://www.example.com':
+                    fallback = self._get_fallback_for_topic(week.get('focus', 'general'), 1)
+                    if fallback:
+                        r = fallback[0]
+                        week['key_resource'] = {'title': r['title'], 'url': r['url'], 'type': r['type']}
+                continue
+            week_num = week.get('week', 0)
+            for day in week['daily_plans']:
+                topic = day.get('topic') or week.get('focus', 'general')
+                day_num = day.get('day', 0)
+                resources = self._find_resources_for_day(topic, week_num, day_num)
+                if resources:
+                    r = resources[0]
+                    day['resource'] = {
+                        'title': r['title'],
+                        'type': r['type'],
+                        'platform': r['platform'],
+                        'url': r['url'],
+                        'what_to_learn': r.get('what_to_learn', ''),
+                        'duration': r.get('duration', 'N/A')
+                    }
+                    day['resources'] = resources
+                time.sleep(0.3)
+        return roadmap
+
+    def _get_fallback_resources(self, topics: List[str], count: int = 6) -> List[Dict[str, Any]]:
+        """Fallback resources when AI fails. Generic but high-quality."""
+        fallbacks = [
+            {"title": "freeCodeCamp Learn", "type": "Interactive", "platform": "freeCodeCamp", "url": "https://www.freecodecamp.org/learn", "what_to_learn": "Hands-on courses", "duration": "Varies"},
+            {"title": "MDN Web Docs", "type": "Documentation", "platform": "Mozilla", "url": "https://developer.mozilla.org/", "what_to_learn": "Web reference", "duration": "Reference"},
+            {"title": "W3Schools", "type": "Interactive", "platform": "W3Schools", "url": "https://www.w3schools.com/", "what_to_learn": "Tutorials", "duration": "Varies"},
+            {"title": "Real Python", "type": "Article", "platform": "Real Python", "url": "https://realpython.com/", "what_to_learn": "Python articles", "duration": "Varies"},
+            {"title": "Dev.to", "type": "Article", "platform": "Dev.to", "url": "https://dev.to/", "what_to_learn": "Developer articles", "duration": "Varies"},
+            {"title": "Official Documentation", "type": "Documentation", "platform": "Docs", "url": "https://www.example.com", "what_to_learn": "Check official docs for your topic", "duration": "N/A"},
+        ]
+        return fallbacks[:count]
+
     def generate_roadmap(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Generate personalized learning roadmap with detailed daily plans for first 4 weeks only.
-        This significantly reduces generation time while giving users immediate actionable content.
-        
-        Roadmap includes:
-        - NO YouTube videos (only interactive courses, documentation, articles, tutorials)
-        - Projects with detailed problem statements explaining the "why"
-        - Bonus features for each project
-        
-        Args:
-            user_data: Dict containing:
-            - profile: User profile with skills, experience level, etc.
-            - selected_tools: List of tools/technologies to learn
-            - hours_per_week: Hours per week for learning
-            - learning_style: Learning style preference
-            - deadline: Optional deadline
-            
-        Returns:
-            dict: Complete roadmap with phases, detailed weekly plans (first 4 weeks), high-level overview for rest,
-                  projects with problem statements, career insights, and skill gap analysis
+        TWO-STEP roadmap generation:
+        Step 1: Generate roadmap structure (weeks, topics, objectives) — one AI call.
+        Step 2: For EACH DAY, one separate AI call to find 2-5 resources for that day's topic.
+        Ensures unique resources per day and better quality matching.
         """
         try:
-            logger.info("Starting optimized roadmap generation")
-            
-            # Check cache with optimized key (only relevant fields)
+            logger.info("Starting two-step roadmap generation")
             cache_data = {
                 'tools': sorted(user_data.get('selected_tools', [])),
                 'hours': user_data.get('hours_per_week'),
-                'style': user_data.get('learning_style'),
                 'level': user_data.get('profile', {}).get('experience_level'),
-                'skills_count': len(user_data.get('profile', {}).get('skills', []))
             }
             cache_key = self._get_cache_key('generate_roadmap', json.dumps(cache_data, sort_keys=True))
             cached = self._get_cached_response(cache_key)
             if cached:
                 logger.info("Returning cached roadmap")
                 return cached
-            
-            profile = user_data.get('profile', {})
-            selected_tools = user_data.get('selected_tools', [])
-            hours_per_week = user_data.get('hours_per_week', 10)
-            learning_style = user_data.get('learning_style', 'Balanced')
-            deadline = user_data.get('deadline', 'Flexible')
-            
-            # Calculate total weeks needed
+
             total_weeks = self._calculate_total_weeks(user_data)
-            detailed_weeks = min(4, total_weeks)
-            
-            # Gather all verified resources for selected tools
-            available_resources = []
-            for tool in selected_tools:
-                resources = get_resources_for_tech(tool)
-                available_resources.extend(resources)
-            
-            # Remove duplicates
-            seen_urls = set()
-            unique_resources = []
-            for resource in available_resources:
-                if resource['url'] not in seen_urls:
-                    seen_urls.add(resource['url'])
-                    unique_resources.append(resource)
-            
-            logger.info(f"Found {len(unique_resources)} unique verified resources for {len(selected_tools)} technologies")
-            
-            # Convert to JSON string to include in prompt
-            resources_json = json.dumps(unique_resources, indent=2)
-            
-            # Detailed prompt with verified resources
-            skills_str = ', '.join(profile.get('skills', [])[:10])  # Limit to top 10
-            tools_str = ', '.join(selected_tools)
-            
-            prompt = f"""Learning Roadmap for {profile.get('experience_level', 'Mid-Level')} professional.
+            experience_level = self._determine_experience_level(user_data)
+            hours_per_week = user_data.get('hours_per_week', 10)
 
-Skills: {skills_str}
-Learning: {tools_str}
-Time: {hours_per_week}h/week
-Style: {learning_style}
+            logger.info(f"Step 1: Generating {total_weeks}-week roadmap structure")
+            roadmap_structure = self._generate_roadmap_structure(user_data, total_weeks, experience_level)
 
-AVAILABLE VERIFIED RESOURCES (you MUST use ONLY these resources):
-{resources_json}
+            logger.info("Step 2: Finding unique resources for each day (one AI call per day)")
+            result = self._add_resources_to_each_day(roadmap_structure)
 
-Generate JSON roadmap:
+            # Trim to requested weeks if the model returned more
+            if result.get('weekly_plans') and len(result['weekly_plans']) > total_weeks:
+                result['weekly_plans'] = result['weekly_plans'][:total_weeks]
+                result['total_duration_weeks'] = total_weeks
+                logger.info("Trimmed roadmap to %s weeks (requested)", total_weeks)
 
-1. 3-4 phases with objectives
-
-2. Detailed daily plans for FIRST {detailed_weeks} WEEKS ONLY (7 days each):
-   Each day needs:
-   - Day number, topic, tasks (3-4), hours
-   - ONE resource from the AVAILABLE VERIFIED RESOURCES list above
-     * CRITICAL: Use the EXACT url from the resources provided
-     * Match the resource to the day's topic/tasks
-     * Copy title, type, platform, url, duration exactly as provided
-     * Add "what_to_learn" field explaining what to focus on from this resource for this day
-   - Practice exercise
-   - Expected outcome
-
-3. High-level overview for remaining weeks:
-   - Focus, main topics, hours, 1 key resource (from verified list)
-
-4. PROJECT IDEAS (3 projects with specific problem statements):
-   Each project needs:
-   - Title
-   - Problem statement (3-5 sentences: what problem, who uses it, value, learning benefit)
-   - Technologies (from selected tools)
-   - Difficulty, estimated_hours
-   - Learning outcomes (3-4 items)
-   - Implementation steps (5-7 detailed steps)
-   - Start week
-   - Bonus features (2-3 optional features)
-
-5. Career insights (4 sentences)
-
-6. Skill gap analysis (3 strengths, 3 gaps, 2 challenges, 3 strategies)
-
-CRITICAL RULES:
-- ONLY use resources from the AVAILABLE VERIFIED RESOURCES list
-- NEVER generate or invent resource URLs
-- Copy URLs EXACTLY as provided in the list
-- If no perfect match exists, use the closest relevant resource
-- Each day must have a different resource (no repeats in same week)
-- Resources should progress from beginner to advanced topics
-
-PROJECT PROBLEM STATEMENT EXAMPLE:
-{{
-  "title": "Decentralized Task Marketplace",
-  "problem_statement": "Freelance platforms charge high fees (20-30%) and have centralized control over payments, leading to delayed payouts and disputes. This project creates a blockchain-based task marketplace where clients and freelancers interact directly through smart contracts, ensuring automatic payment release upon task completion and reducing fees to near-zero. This is valuable for learning how to build real-world dApps that solve trust issues in peer-to-peer transactions. It demonstrates practical use of smart contracts, IPFS for file storage, and Web3 wallet integration.",
-  "technologies": ["Solidity", "Ethers.js", "React", "IPFS"],
-  "difficulty": "Intermediate",
-  "estimated_hours": 40,
-  "learning_outcomes": [
-    "Build and deploy smart contracts with escrow logic",
-    "Integrate Web3 wallets (MetaMask) with React frontend",
-    "Store and retrieve files using IPFS",
-    "Handle blockchain transactions and events"
-  ],
-  "steps": [
-    "Design smart contract architecture for task creation, bidding, and escrow",
-    "Write and test Solidity contracts with dispute resolution mechanism",
-    "Build React frontend with wallet connection and task listing UI",
-    "Integrate IPFS for storing task descriptions and deliverables",
-    "Implement task lifecycle: creation, bidding, acceptance, completion, payment",
-    "Add event listeners for blockchain events and update UI in real-time",
-    "Deploy to testnet and conduct end-to-end testing"
-  ],
-  "start_week": 6,
-  "bonus_features": [
-    "Reputation system based on completed tasks",
-    "Multi-signature escrow for high-value tasks",
-    "Search and filter functionality with tags"
-  ]
-}}
-
-Return ONLY valid JSON:
-{{
-  "total_duration_weeks": {total_weeks},
-  "estimated_completion_date": "YYYY-MM-DD",
-  "phases": [{{"phase": n, "title": str, "duration_weeks": n, "tools": [], "objectives": [], "milestones": []}}],
-  "weekly_plans": [
-    {{
-      "week": 1-{detailed_weeks},
-      "phase": n,
-      "focus": str,
-      "objectives": [],
-      "prerequisites": [],
-      "daily_plans": [
-        {{
-          "day": 1-7,
-          "topic": str,
-          "tasks": [],
-          "hours": n,
-          "resource": {{
-            "title": "EXACT title from verified list",
-            "type": "EXACT type from verified list",
-            "platform": "EXACT platform from verified list",
-            "url": "EXACT url from verified list",
-            "what_to_learn": "What to focus on from this resource today",
-            "duration": "EXACT duration from verified list"
-          }},
-          "practice": str,
-          "outcome": str
-        }}
-      ]
-    }},
-    {{
-      "week": {detailed_weeks + 1}+,
-      "phase": n,
-      "focus": str,
-      "main_topics": [],
-      "total_hours": n,
-      "key_resource": {{
-        "title": "from verified list",
-        "url": "from verified list",
-        "type": "from verified list"
-      }}
-    }}
-  ],
-  "projects": [
-    {{
-      "title": str,
-      "problem_statement": str,
-      "technologies": [],
-      "difficulty": str,
-      "estimated_hours": n,
-      "learning_outcomes": [],
-      "steps": [],
-      "start_week": n,
-      "bonus_features": []
-    }}
-  ],
-  "career_insights": str,
-  "skill_gap_analysis": {{
-    "strengths": [],
-    "gaps": [],
-    "challenges": [],
-    "strategies": []
-  }}
-}}"""
-            
-            # First attempt with extended timeout for roadmap generation (15 minutes)
-            response_text = self._call_openrouter_api(prompt, timeout=900.0, max_tokens=10000)
-            result = self._extract_json_from_response(response_text)
-            
-            # Validate the response structure first (quick check)
-            is_valid_structure, structure_errors = self.validate_roadmap_structure(result, unique_resources)
+            # Validate (no verified-resource list — we allow AI-suggested URLs from step 2)
+            is_valid_structure, structure_errors = self.validate_roadmap_structure(result, [])
             if not is_valid_structure:
-                logger.warning(f"Roadmap structure validation failed: {structure_errors}")
-                logger.info("Retrying roadmap generation with stricter prompt")
-                
-                # Retry with stricter prompt and extended timeout (15 minutes)
-                stricter_prompt = prompt + "\n\nIMPORTANT: Ensure every daily_plan has a complete resource object with url field. All 7 days must be present for each week. CRITICAL: You MUST select resource URLs ONLY from the VERIFIED RESOURCES list provided above. DO NOT create or invent URLs. All URLs must be from the verified list. DO NOT include any YouTube videos or YouTube links. All projects must include detailed problem_statement and bonus_features fields."
-                
-                response_text = self._call_openrouter_api(stricter_prompt, timeout=900.0, max_tokens=10000)
-                result = self._extract_json_from_response(response_text)
-                
-                # Validate structure again
-                is_valid_structure, structure_errors = self.validate_roadmap_structure(result, unique_resources)
-                if not is_valid_structure:
-                    logger.error(f"Roadmap structure validation failed after retry: {structure_errors}")
-                    raise ValueError(f"Generated roadmap failed structure validation: {structure_errors}")
-            
-            # Full validation (includes hours, projects, etc.)
+                logger.warning(f"Roadmap structure validation issues: {structure_errors}")
             validation_errors = self._validate_roadmap(result, hours_per_week)
-            
             if validation_errors:
-                logger.warning(f"Roadmap validation failed: {validation_errors}")
-                # Don't retry again if structure is valid but other validations fail
-                # Log as warning but don't fail - structure is most important
-                logger.warning("Roadmap structure is valid but some fields may be missing or incorrect")
-            
-            # Filter out any YouTube resources that might have slipped through
+                logger.warning(f"Roadmap validation: {validation_errors}")
+
             result = self._filter_youtube_resources(result)
-            
-            # Validate that all URLs are from our verified list and replace any hallucinated URLs
-            if 'weekly_plans' in result:
-                verified_urls = {r['url'] for r in unique_resources}
-                
-                for week in result['weekly_plans']:
-                    if 'daily_plans' in week:
-                        for day in week['daily_plans']:
-                            if 'resource' in day and 'url' in day['resource']:
-                                url = day['resource']['url']
-                                if url not in verified_urls:
-                                    # If AI hallucinated a URL, replace with a verified one
-                                    logger.warning(f"Hallucinated URL detected: {url}")
-                                    # Find a replacement from verified resources
-                                    replacement = unique_resources[0] if unique_resources else None
-                                    if replacement:
-                                        day['resource'] = {
-                                            'title': replacement['title'],
-                                            'type': replacement['type'],
-                                            'platform': replacement['platform'],
-                                            'url': replacement['url'],
-                                            'what_to_learn': day['resource'].get('what_to_learn', 
-                                                f"Study {replacement['topics'][0] if replacement.get('topics') else 'the topic'}"),
-                                            'duration': replacement['duration']
-                                        }
-                    
-                    # Check key_resource in high-level weeks
-                    if 'key_resource' in week and 'url' in week['key_resource']:
-                        url = week['key_resource']['url']
-                        if url not in verified_urls:
-                            logger.warning(f"Hallucinated URL in key_resource: {url}")
-                            if unique_resources:
-                                replacement = unique_resources[0]
-                                week['key_resource'] = {
-                                    'title': replacement['title'],
-                                    'url': replacement['url'],
-                                    'type': replacement['type']
-                                }
-            
-            # Cache result
+
+            if 'estimated_completion_date' not in result and result.get('total_duration_weeks'):
+                from datetime import datetime, timedelta
+                weeks = result.get('total_duration_weeks', 0)
+                if weeks > 0:
+                    result['estimated_completion_date'] = (datetime.now() + timedelta(weeks=weeks)).strftime('%Y-%m-%d')
+
             self._cache_response(cache_key, result)
-            
             logger.info("Roadmap generation completed successfully")
             return result
-            
+
         except (ValueError, TimeoutError) as e:
             logger.error(f"Roadmap generation failed: {str(e)}")
             raise
@@ -1263,7 +1381,7 @@ If they ask about timeline, difficulty, resources, or strategy, give actionable 
 Keep response under 200 words.
 """
             
-            response_text = self._call_openrouter_api(prompt)
+            response_text = self._call_ai_api(prompt)
             
             # Clean up response (remove markdown if present)
             if response_text.startswith('```'):

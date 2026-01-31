@@ -159,9 +159,9 @@ def test_complete_roadmap_flow():
     print("="*60)
     
     # Check if API key is available
-    if not os.getenv('OPENROUTER_API_KEY'):
-        print("⚠️  OPENROUTER_API_KEY not found. Skipping API tests.")
-        print("   Set OPENROUTER_API_KEY environment variable to run full tests.")
+    if not os.getenv('GEMINI_API_KEY'):
+        print("⚠️  GEMINI_API_KEY not found. Skipping API tests.")
+        print("   Set GEMINI_API_KEY environment variable to run full tests.")
         return
     
     ai_service = AIService()

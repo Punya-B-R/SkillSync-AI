@@ -513,7 +513,7 @@ def generate_roadmap():
             logger.error(f"Roadmap generation timeout: {str(e)}")
             return jsonify({
                 'success': False,
-                'message': 'Roadmap generation timed out. This can take up to 15 minutes. Please try again.',
+                'message': 'Roadmap generation timed out. This can take up to 30 minutes. Please try again.',
                 'error': 'TIMEOUT_ERROR'
             }), 504
         
@@ -635,33 +635,32 @@ def chat():
 @api_bp.route('/health', methods=['GET'])
 def health():
     """
-    Health check endpoint - Check if API and OpenRouter are working.
+    Health check endpoint - Check if API and AI (Gemini) are working.
     """
     try:
         logger.info("Health check requested")
         
-        # Test OpenRouter API connection
+        # Test AI (Gemini) API connection
         api_status = 'unknown'
         api_error = None
         
         try:
-            # Simple test - just check if service is initialized
             if ai_service and hasattr(ai_service, 'client'):
                 api_status = 'connected'
-                logger.info("OpenRouter API health check: OK")
+                logger.info("AI (Gemini) API health check: OK")
             else:
                 api_status = 'not_initialized'
                 api_error = 'AIService not properly initialized'
         except Exception as e:
             api_status = 'error'
             api_error = str(e)
-            logger.warning(f"OpenRouter API health check failed: {str(e)}")
+            logger.warning(f"AI (Gemini) API health check failed: {str(e)}")
         
         health_data = {
             'status': 'ok' if api_status == 'connected' else 'degraded',
             'api': 'Career Roadmap Generator API',
-            'openrouter_status': api_status,
-            'openrouter_model': ai_service.MODEL_NAME if api_status == 'connected' else 'unknown',
+            'ai_status': api_status,
+            'ai_model': ai_service.MODEL_NAME if api_status == 'connected' else 'unknown',
             'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
         }
         

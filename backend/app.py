@@ -155,8 +155,8 @@ def bad_request(error):
         'error': 'BAD_REQUEST'
     }), 400
 
-def check_openrouter_status():
-    """Check if OpenRouter API is accessible."""
+def check_ai_status():
+    """Check if AI API (Gemini) is accessible."""
     try:
         from services.ai_service import AIService
         ai_service = AIService()
@@ -165,24 +165,24 @@ def check_openrouter_status():
         return False, str(e)
 
 if __name__ == '__main__':
-    # Check OpenRouter status on startup
+    # Check AI (Gemini) status on startup
     logger.info("=" * 60)
     logger.info("Starting Career Roadmap Generator API")
     logger.info("=" * 60)
     
-    api_ok, model_info = check_openrouter_status()
+    api_ok, model_info = check_ai_status()
     
     if api_ok:
-        logger.info(f"✓ OpenRouter API: Connected")
+        logger.info(f"✓ AI (Gemini) API: Connected")
         logger.info(f"✓ Model: {model_info}")
     else:
-        logger.warning(f"✗ OpenRouter API: Not connected - {model_info}")
-        logger.warning("  Make sure OPENROUTER_API_KEY is set in .env file")
+        logger.warning(f"✗ AI (Gemini) API: Not connected - {model_info}")
+        logger.warning("  Make sure GEMINI_API_KEY is set in .env file")
     
     logger.info("=" * 60)
     logger.info("Available Endpoints:")
     logger.info("  GET  /                    - Frontend app")
-    logger.info("  GET  /api/health          - API & OpenRouter status")
+    logger.info("  GET  /api/health          - API & AI status")
     logger.info("  POST /api/upload-resume   - Upload and parse resume")
     logger.info("  POST /api/analyze-resume  - Analyze resume with AI")
     logger.info("  POST /api/recommend-domains - Get domain recommendations")

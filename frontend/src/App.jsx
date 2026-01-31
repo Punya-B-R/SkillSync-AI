@@ -85,6 +85,7 @@ function App() {
         profile: profile,
         selected_tools: selectedTools.map(tool => tool.name),
         hours_per_week: prefs.hoursPerWeek,
+        total_weeks: prefs.totalWeeks || null,
         learning_style: prefs.learningStyle || 'balanced',
         deadline: prefs.deadline || null,
       }
@@ -455,7 +456,7 @@ function App() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-800">AI Career Roadmap Generator</h1>
-              <p className="text-sm text-gray-600">Powered by OpenRouter AI</p>
+              <p className="text-sm text-gray-600">Powered by Gemini AI</p>
             </div>
             <div className="flex items-center gap-2">
               <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
@@ -678,7 +679,7 @@ function App() {
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="container mx-auto px-4 py-6 text-center text-gray-600 text-sm">
-          <p>© 2025 AI Career Roadmap Generator | Powered by OpenRouter AI</p>
+          <p>© 2025 AI Career Roadmap Generator | Powered by Gemini AI</p>
         </div>
       </footer>
     </div>

@@ -2,13 +2,13 @@
 
 🌐 **Live Demo:** [https://skillsync-ai-2-w9jj.onrender.com/](https://skillsync-ai-2-w9jj.onrender.com/)
 
-A full-stack application that generates personalized career roadmaps using AI (OpenRouter with Llama 3.3 70B).
+A full-stack application that generates personalized career roadmaps using AI (Gemini).
 
 ## Tech Stack
 
 - **Backend**: Python Flask (REST API)
 - **Frontend**: React + Vite + Tailwind CSS
-- **AI**: OpenRouter API (meta-llama/llama-3.3-70b-instruct:free)
+- **AI**: Gemini API (configurable model, e.g. gemini-2.0-flash)
 - **File Processing**: PyPDF2, python-docx
 
 ## Project Structure
@@ -63,8 +63,8 @@ pip install -r requirements.txt
 
 5. Create a `.env` file (copy from `env.example.txt`):
 ```bash
-# Copy env.example.txt to .env and add your OpenRouter API key
-OPENROUTER_API_KEY=your_openrouter_api_key_here
+# Copy env.example.txt to .env and add your Gemini API key
+GEMINI_API_KEY=your_gemini_api_key_here
 FLASK_ENV=development
 FLASK_DEBUG=True
 ```
@@ -107,13 +107,13 @@ The frontend will run on `http://localhost:3000`
 
 All implementation files contain TODO comments indicating what needs to be implemented. The structure is set up and ready for development.
 
-## Getting an OpenRouter API Key
+## Getting a Gemini API Key
 
-1. Visit [OpenRouter](https://openrouter.ai/)
-2. Sign in or create an account
-3. Go to [API Keys](https://openrouter.ai/keys)
-4. Create a new API key
-5. Add it to your `.env` file as `OPENROUTER_API_KEY`
+1. Visit [Google AI Studio](https://aistudio.google.com/apikey)
+2. Sign in with your Google account
+3. Create an API key
+4. Add it to your `backend/.env` file as `GEMINI_API_KEY`
+5. Optionally set `GEMINI_MODEL_NAME` (default: gemini-2.0-flash)
 
-**Note**: The app uses the free tier model `meta-llama/llama-3.3-70b-instruct:free` which doesn't require credits for basic usage.
+**Note**: Gemini has a free tier; you can set the model in `.env` (e.g. gemini-2.0-flash).
 

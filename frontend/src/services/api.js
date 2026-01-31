@@ -13,7 +13,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 900000, // 900 seconds (15 minutes) for AI calls, especially roadmap generation
+  timeout: 1800000, // 30 minutes for AI calls, especially roadmap generation
 })
 
 // Request interceptor for logging
@@ -64,7 +64,7 @@ api.interceptors.response.use(
     // Handle timeout errors specifically
     if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
       return Promise.reject({
-        message: 'Request timed out. Roadmap generation can take up to 15 minutes. Please try again.',
+        message: 'Request timed out. Roadmap generation can take up to 30 minutes. Please try again.',
         status: 0,
       })
     }
@@ -96,7 +96,7 @@ export const apiService = {
 
   generateRoadmap: (userData) =>
     api.post('/generate-roadmap', userData, {
-      timeout: 900000, // 900 seconds (15 minutes) for roadmap generation
+      timeout: 1800000, // 30 minutes for roadmap generation
     }),
 
   chat: (message, context) =>

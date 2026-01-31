@@ -82,13 +82,13 @@ cd backend && gunicorn --bind 0.0.0.0:$PORT --timeout 900 --workers 2 app:app
 
 ---
 
-### ❌ Error: "OPENROUTER_API_KEY not set" or API errors
+### ❌ Error: "GEMINI_API_KEY not set" or API errors
 
 **Problem:** Missing environment variable
 
 **Solution:**
 1. Go to Environment tab
-2. Add `OPENROUTER_API_KEY` with your actual API key
+2. Add `GEMINI_API_KEY` with your actual API key
 3. Make sure there are no extra spaces
 
 ---
@@ -144,7 +144,7 @@ cd backend && gunicorn --bind 0.0.0.0:$PORT --timeout 900 --workers 2 app:app
    - `NODE_VERSION` = `18.x` or `20.x` (NOT 8.x!)
    - `FLASK_ENV` = `production`
    - `FLASK_SECRET_KEY` = (set)
-   - `OPENROUTER_API_KEY` = (set)
+   - `GEMINI_API_KEY` = (set)
 
 2. **Check Build Command:**
    ```
