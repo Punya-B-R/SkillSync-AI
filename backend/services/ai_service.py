@@ -3,13 +3,14 @@ AI service for interacting with Gemini API (OpenAI-compatible endpoint).
 Optional: Google Search grounding via google-genai for real resource URLs.
 """
 import ast
-import os
-import re
 import json
 import logging
+import os
+import re
 import time
 import hashlib
 from typing import Dict, Any, Optional, Tuple, List
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from openai import OpenAI
 from data.verified_resources import (
@@ -18,7 +19,6 @@ from data.verified_resources import (
     get_resources_for_tech,
     get_all_resources_for_techs
 )
-
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class AIService:
                 logger.info("Google Search grounding enabled for resource finding")
             except Exception as e:
                 logger.debug("Grounding client not available: %s", e)
-        
+
         # Response cache: {cache_key: (response, timestamp)}
         self.cache = {}
     
@@ -966,8 +966,8 @@ Return ONLY valid JSON:
 
     def _generate_roadmap_structure(self, user_data: Dict[str, Any], total_weeks: int, experience_level: str) -> Dict[str, Any]:
         """
-        STEP 1: Generate roadmap structure (phases, weekly_plans, topics, objectives).
-        Daily plans include a placeholder resource; step 2 will replace with real resources.
+        STEP 1: Generate FULL roadmap in ONE call (structure + all 3 resource types per day).
+        Same approach as sub-buildathon: one Gemini call for entire roadmap with resources.
         """
         profile = user_data.get('profile', {})
         selected_tools = user_data.get('selected_tools', [])
@@ -975,6 +975,56 @@ Return ONLY valid JSON:
         skills_str = ', '.join(profile.get('skills', [])[:10])
         tools_str = ', '.join(selected_tools)
         detailed_weeks = min(4, total_weeks)
+
+        prompt = f"""You are an expert curriculum designer for tech education.
+
+USER: Experience {experience_level}, Skills: {skills_str}, Learning: {tools_str}, Time: {hours_per_week}h/week.
+TASK: Create a complete {total_weeks}-week learning roadmap with ALL resources in ONE response.
+
+OUTPUT (valid JSON only, no markdown):
+{{
+  "total_duration_weeks": {total_weeks},
+  "estimated_completion_date": "YYYY-MM-DD",
+  "phases": [{{"phase": n, "title": str, "duration_weeks": n, "tools": [], "objectives": [], "milestones": []}}],
+  "weekly_plans": [
+    (For weeks 1-{detailed_weeks}: each week has "week", "phase", "focus", "objectives", "prerequisites", "daily_plans" with exactly 7 days. Each day has "day", "topic", "tasks" (array), "hours", "practice", "outcome", AND three resource arrays below.)
+    (For weeks {detailed_weeks + 1}+: "week", "phase", "focus", "main_topics", "total_hours", "key_resource" with "title", "url", "type" - use "https://www.example.com" for url)
+  ],
+  "projects": [{{"title", "problem_statement", "technologies", "difficulty", "estimated_hours", "learning_outcomes", "steps", "start_week", "bonus_features"}}],
+  "career_insights": "string",
+  "skill_gap_analysis": {{"strengths": [], "gaps": [], "challenges": [], "strategies": []}}
+}}
+
+For each day in daily_plans (weeks 1-{detailed_weeks}), include these THREE resource sections — DO NOT SKIP:
+
+1. GENERAL RESOURCES (4-5 items in "general_resources") — DO NOT CHANGE:
+   - Official documentation, free courses (Codecademy, freeCodeCamp, etc.), quality blog posts, practice repositories, interactive platforms
+   - Include actual URLs when possible
+   - Format: {{ "title": "string", "url": "string", "type": "string", "description": "string", "difficulty": "string", "platform": "string" }}
+   - Only suggest resources that are actually free
+
+2. YOUTUBE VIDEOS (5-7 items in "youtube_videos") — DO NOT CHANGE:
+   - Specific video recommendations for the day's topic
+   - Prioritize well-known channels: Fireship, Traversy Media, freeCodeCamp, The Net Ninja, Web Dev Simplified
+   - Format: {{ "videoTitle": "string", "channelName": "string", "duration": "string", "description": "string", "difficulty": "string", "recommendationReason": "string" }}
+   - Use actual video titles when possible; include estimated duration (e.g. "12 min", "1h 20m")
+
+3. PRACTICE & QUIZZES (3-5 items in "practice_resources") — DO NOT CHANGE:
+   - Interactive quizzes, coding challenges, and practice assessments for the day's topic
+   - Only FREE platforms: LeetCode, HackerRank, Codewars, freeCodeCamp challenges, W3Schools exercises, Exercism, Scrimba, GitHub practice repos, Quizizz, Kahoot (free tiers)
+   - Format: {{ "platformName": "string", "type": "string", "difficulty": "string", "topicTested": "string", "estimatedTime": "string", "url": "string", "description": "string" }}
+   - For "type" use: "Quiz", "Coding Challenge", "Interactive Exercise", or "Practice Problems"
+   - Include direct URL or how to find it; estimatedTime e.g. "15 min", "1 hour"
+   - Only include truly free resources (no trial/premium required)
+
+Each day structure: "day", "topic", "tasks", "hours", "practice", "outcome", "general_resources", "youtube_videos", "practice_resources".
+
+RULES:
+- EXACTLY {total_weeks} weeks in weekly_plans. First {detailed_weeks} weeks: full daily_plans (7 days each) with all 3 resource arrays populated. Rest: high-level with key_resource.
+- Topics must be SPECIFIC (e.g. "Pandas DataFrames and Series", "React useState and useEffect"), not generic.
+- Return ONLY valid JSON. No trailing commas."""
+
+        json_rules = "\n\nCRITICAL: Output must be valid JSON only. Use double quotes for ALL keys and string values (never single quotes). No trailing commas after the last item in any object or array. No unquoted property names. No literal newlines inside strings (use \\n)."
 
         placeholder_resource = {
             "title": "To be added",
@@ -985,38 +1035,12 @@ Return ONLY valid JSON:
             "duration": "TBD"
         }
 
-        prompt = f"""You are an expert curriculum designer for tech education.
-
-USER: Experience {experience_level}, Skills: {skills_str}, Learning: {tools_str}, Time: {hours_per_week}h/week.
-TASK: Create a {total_weeks}-week learning roadmap STRUCTURE. Do NOT invent resource URLs - use the placeholder below for every day's resource.
-
-OUTPUT (valid JSON only, no markdown):
-{{
-  "total_duration_weeks": {total_weeks},
-  "estimated_completion_date": "YYYY-MM-DD",
-  "phases": [{{"phase": n, "title": str, "duration_weeks": n, "tools": [], "objectives": [], "milestones": []}}],
-  "weekly_plans": [
-    (For weeks 1-{detailed_weeks}: each week has "week", "phase", "focus", "objectives", "prerequisites", "daily_plans" with exactly 7 days. Each day has "day", "topic", "tasks" (array), "hours", "resource" (use this exact placeholder: {json.dumps(placeholder_resource)}), "practice", "outcome".)
-    (For weeks {detailed_weeks + 1}+: "week", "phase", "focus", "main_topics", "total_hours", "key_resource" with "title", "url", "type" - use placeholder url "https://www.example.com")
-  ],
-  "projects": [{{"title", "problem_statement", "technologies", "difficulty", "estimated_hours", "learning_outcomes", "steps", "start_week", "bonus_features"}}],
-  "career_insights": "string",
-  "skill_gap_analysis": {{"strengths": [], "gaps": [], "challenges": [], "strategies": []}}
-}}
-
-RULES:
-- EXACTLY {total_weeks} weeks in weekly_plans. First {detailed_weeks} weeks: full daily_plans (7 days each) with the placeholder resource. Rest: high-level with key_resource.
-- Topics must be SPECIFIC (e.g. "Pandas DataFrames and Series", "React useState and useEffect"), not generic.
-- Return ONLY valid JSON. No trailing commas."""
-
-        json_rules = "\n\nCRITICAL: Output must be valid JSON only. Use double quotes for ALL keys and string values (never single quotes). No trailing commas after the last item in any object or array. No unquoted property names. No literal newlines inside strings (use \\n)."
-
         try:
-            response_text = self._call_ai_api(prompt + json_rules, timeout=300.0, max_tokens=8000)
+            response_text = self._call_ai_api(prompt + json_rules, timeout=300.0, max_tokens=32768)
             result = self._extract_json_from_response(response_text)
         except ValueError as parse_err:
             logger.warning(f"Structure JSON parse failed, retrying with stricter prompt: {parse_err}")
-            response_text = self._call_ai_api(prompt + json_rules + "\n\nYou MUST output strictly valid JSON. Every property name in double quotes. No single quotes anywhere. No trailing commas.", timeout=300.0, max_tokens=8000)
+            response_text = self._call_ai_api(prompt + json_rules + "\n\nYou MUST output strictly valid JSON. Every property name in double quotes. No single quotes anywhere. No trailing commas.", timeout=300.0, max_tokens=32768)
             result = self._extract_json_from_response(response_text)
 
         if result is None or not isinstance(result, dict):
@@ -1034,7 +1058,18 @@ RULES:
                         "objectives": [],
                         "prerequisites": [],
                         "daily_plans": [
-                            {"day": d, "topic": f"Day {d}", "tasks": [], "hours": round(hours_per_week / 7, 1), "resource": placeholder_resource, "practice": "", "outcome": ""}
+                            {
+                                "day": d,
+                                "topic": f"Day {d}",
+                                "tasks": [],
+                                "hours": round(hours_per_week / 7, 1),
+                                "resource": placeholder_resource,
+                                "practice": "",
+                                "outcome": "",
+                                "general_resources": [],
+                                "youtube_videos": [],
+                                "practice_resources": []
+                            }
                             for d in range(1, 8)
                         ],
                     }
@@ -1226,8 +1261,10 @@ Return 3-4 resources for "{topic}". Valid JSON array only. No trailing commas.""
 
     def _add_resources_to_each_day(self, roadmap: Dict[str, Any]) -> Dict[str, Any]:
         """
-        STEP 2: For each day (in weekly_plans with daily_plans), one AI call to find resources for that day's topic.
-        Sets day['resource'] (first resource for frontend) and day['resources'] (full list).
+        STEP 2: Normalize resource fields from the one-call structure.
+        Resources come from _generate_roadmap_structure; this only maps/normalizes.
+        Adds day['resource'] for backward compatibility (first general resource).
+        Adds YouTube search URLs to youtube_videos when missing.
         """
         for week in roadmap.get('weekly_plans', []):
             if 'daily_plans' not in week or not week['daily_plans']:
@@ -1241,19 +1278,51 @@ Return 3-4 resources for "{topic}". Valid JSON array only. No trailing commas.""
             for day in week['daily_plans']:
                 topic = day.get('topic') or week.get('focus', 'general')
                 day_num = day.get('day', 0)
-                resources = self._find_resources_for_day(topic, week_num, day_num)
-                if resources:
-                    r = resources[0]
+
+                # Accept both naming conventions (AI may use either)
+                general = day.get('general_resources') or day.get('resources') or []
+                youtube = day.get('youtube_videos') or day.get('youtubeResources') or []
+                practice = day.get('practice_resources') or day.get('assessmentResources') or []
+
+                day['general_resources'] = general if isinstance(general, list) else []
+                day['youtube_videos'] = youtube if isinstance(youtube, list) else []
+                day['practice_resources'] = practice if isinstance(practice, list) else []
+
+                # Add YouTube search URL to each video if missing
+                for video in day['youtube_videos']:
+                    if isinstance(video, dict) and not video.get('url'):
+                        title = video.get('videoTitle', video.get('title', ''))
+                        channel = video.get('channelName', video.get('channel', ''))
+                        query = f"{title} {channel}".strip() or topic
+                        video['url'] = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+
+                # Set day['resource'] from first general resource for backward compatibility
+                if day['general_resources'] and isinstance(day['general_resources'][0], dict):
+                    r = day['general_resources'][0]
                     day['resource'] = {
-                        'title': r['title'],
-                        'type': r['type'],
-                        'platform': r['platform'],
-                        'url': r['url'],
-                        'what_to_learn': r.get('what_to_learn', ''),
+                        'title': r.get('title', 'Resource'),
+                        'type': r.get('type', 'Documentation'),
+                        'platform': r.get('platform', ''),
+                        'url': r.get('url', 'https://www.example.com'),
+                        'what_to_learn': r.get('description', ''),
                         'duration': r.get('duration', 'N/A')
                     }
-                    day['resources'] = resources
-                time.sleep(0.3)
+                    day['resources'] = day['general_resources']
+                elif not day.get('resource'):
+                    # Fallback if one-call didn't produce general resources
+                    fallback_resources = self._find_resources_for_day(topic, week_num, day_num)
+                    if fallback_resources:
+                        r = fallback_resources[0]
+                        day['resource'] = {
+                            'title': r['title'],
+                            'type': r['type'],
+                            'platform': r['platform'],
+                            'url': r['url'],
+                            'what_to_learn': r.get('what_to_learn', ''),
+                            'duration': r.get('duration', 'N/A')
+                        }
+                        day['resources'] = fallback_resources
+                        day['general_resources'] = fallback_resources
         return roadmap
 
     def _get_fallback_resources(self, topics: List[str], count: int = 6) -> List[Dict[str, Any]]:
@@ -1295,7 +1364,7 @@ Return 3-4 resources for "{topic}". Valid JSON array only. No trailing commas.""
             logger.info(f"Step 1: Generating {total_weeks}-week roadmap structure")
             roadmap_structure = self._generate_roadmap_structure(user_data, total_weeks, experience_level)
 
-            logger.info("Step 2: Finding unique resources for each day (one AI call per day)")
+            logger.info("Step 2: Normalizing resource fields from structure")
             result = self._add_resources_to_each_day(roadmap_structure)
 
             # Trim to requested weeks if the model returned more
